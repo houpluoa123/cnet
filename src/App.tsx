@@ -167,6 +167,38 @@ export default function App() {
     }
   };
 
+  // Refs to prevent state capture in websocket listeners (prevents reconnect loop)
+  const activeTabRef = useRef(activeTab);
+  const selectedFriendRef = useRef(selectedFriend);
+  const selectedGroupRef = useRef(selectedGroup);
+  const chatModeRef = useRef(chatMode);
+  const currentUserRef = useRef(currentUser);
+
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  useEffect(() => { selectedFriendRef.current = selectedFriend; }, [selectedFriend]);
+  useEffect(() => { selectedGroupRef.current = selectedGroup; }, [selectedGroup]);
+  useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
+  // Polling fallback when WebSocket is offline or blocked (e.g. by Cloudflare tunnel challenge)
+  useEffect(() => {
+    if (isWsConnected || !token) return;
+
+    const interval = setInterval(() => {
+      try {
+        if (chatMode === 'direct' && selectedFriend) {
+          loadChatHistories(selectedFriend.id);
+        } else if (chatMode === 'group' && selectedGroup) {
+          loadGroupHistory(selectedGroup.id);
+        }
+      } catch (err) {
+        console.error("Polling historical sync failed:", err);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isWsConnected, selectedFriend, selectedGroup, chatMode, token]);
+
   // Handle active socket connection setup and lifecycle
   useEffect(() => {
     if (!token || !currentUser) {
@@ -179,7 +211,7 @@ export default function App() {
 
     const establishWebSocketConnection = () => {
       try {
-        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        if (socketRef.current && (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING)) {
           return;
         }
 
@@ -217,13 +249,13 @@ export default function App() {
                 appendIncomingMessage(senderId, {
                   id,
                   senderId,
-                  receiverId: currentUser.id,
+                  receiverId: currentUserRef.current?.id || 0,
                   text,
                   createdAt
                 });
 
                 // Trigger gorgeous popup alert overlay if user is browsing other sections
-                if (activeTab !== 'chats' || !selectedFriend || selectedFriend.id !== senderId || chatMode !== 'direct') {
+                if (activeTabRef.current !== 'chats' || !selectedFriendRef.current || selectedFriendRef.current.id !== senderId || chatModeRef.current !== 'direct') {
                   fetchNotificationDetailsAndAlert('direct', senderId, text);
                 }
                 break;
@@ -231,7 +263,7 @@ export default function App() {
 
               case 'message_recall_recv': {
                 const { id, senderId, receiverId } = data;
-                const targetFriendId = senderId === currentUser.id ? receiverId : senderId;
+                const targetFriendId = senderId === (currentUserRef.current?.id || 0) ? receiverId : senderId;
                 setMessagesRegistry((prev) => {
                   const existing = prev[targetFriendId] || [];
                   return {
@@ -266,7 +298,7 @@ export default function App() {
                 });
 
                 // Trigger gorgeous popup alert notice for incoming secure group messages
-                if (activeTab !== 'chats' || !selectedGroup || selectedGroup.id !== groupId || chatMode !== 'group') {
+                if (activeTabRef.current !== 'chats' || !selectedGroupRef.current || selectedGroupRef.current.id !== groupId || chatModeRef.current !== 'group') {
                   setIncomingNotification({
                     senderName: `${senderName} @ Nhóm`,
                     avatar: senderAvatar || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=group',
@@ -282,7 +314,7 @@ export default function App() {
                 const { id, receiverId, text, createdAt } = data;
                 appendIncomingMessage(receiverId, {
                   id,
-                  senderId: currentUser.id,
+                  senderId: currentUserRef.current?.id || 0,
                   receiverId,
                   text,
                   createdAt
@@ -391,7 +423,7 @@ export default function App() {
         console.error("Websocket extraction cleaner failed:", e);
       }
     };
-  }, [token, currentUser, activeTab, selectedFriend, selectedGroup, chatMode]);
+  }, [token, currentUser?.id]);
 
   const appendIncomingMessage = (friendId: number, message: Message) => {
     try {
@@ -696,36 +728,91 @@ export default function App() {
     setActiveTab('chats');
   };
 
-  // Triggers WebSockets payload to send custom text
-  const handleSendMessage = (text: string) => {
+  // Triggers WebSockets payload to send custom text with HTTP API fallback
+  const handleSendMessage = async (text: string) => {
     try {
-      if (!text.trim() || !selectedFriend || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-        console.warn("Unable to send websocket payload: connection is offline or parameters are empty.");
-        return;
+      if (!text.trim() || !selectedFriend) return;
+      const trimmedText = text.trim();
+
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        const messagePayload = JSON.stringify({
+          type: 'message',
+          receiverId: selectedFriend.id,
+          text: trimmedText
+        });
+        socketRef.current.send(messagePayload);
+      } else {
+        // Fallback to HTTP POST
+        const res = await fetch('/api/messages/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            receiverId: selectedFriend.id,
+            text: trimmedText
+          })
+        });
+        if (res.ok) {
+          const newMsg = await res.json();
+          setMessagesRegistry((prev) => {
+            const existing = prev[selectedFriend.id] || [];
+            if (existing.some(m => m.id === newMsg.id)) return prev;
+            return {
+              ...prev,
+              [selectedFriend.id]: [...existing, newMsg]
+            };
+          });
+        } else {
+          console.error("HTTP fallback message send failed.");
+        }
       }
-      const messagePayload = JSON.stringify({
-        type: 'message',
-        receiverId: selectedFriend.id,
-        text: text.trim()
-      });
-      socketRef.current.send(messagePayload);
     } catch (err) {
-      console.error("Socket message emit failed:", err);
+      console.error("Socket/HTTP message emit failed:", err);
     }
   };
 
-  const handleSendGroupMessage = (text: string) => {
+  const handleSendGroupMessage = async (text: string) => {
     try {
-      if (!text.trim() || !selectedGroup || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-        return;
+      if (!text.trim() || !selectedGroup) return;
+      const trimmedText = text.trim();
+
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({
+          type: 'group_message',
+          groupId: selectedGroup.id,
+          text: trimmedText
+        }));
+      } else {
+        // Fallback to HTTP POST
+        const res = await fetch('/api/groups/messages/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            groupId: selectedGroup.id,
+            text: trimmedText
+          })
+        });
+        if (res.ok) {
+          const newMsg = await res.json();
+          setGroupMessagesRegistry((prev) => {
+            const existing = prev[selectedGroup.id] || [];
+            if (existing.some(m => m.id === newMsg.id)) return prev;
+            return {
+              ...prev,
+              [selectedGroup.id]: [...existing, newMsg]
+            };
+          });
+        } else {
+          console.error("HTTP fallback group message send failed.");
+        }
       }
-      socketRef.current.send(JSON.stringify({
-        type: 'group_message',
-        groupId: selectedGroup.id,
-        text: text.trim()
-      }));
     } catch (err) {
-      console.error("Socket send group message error:", err);
+      console.error("Socket/HTTP send group message error:", err);
     }
   };
 

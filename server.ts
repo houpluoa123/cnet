@@ -795,6 +795,80 @@ app.get('/api/messages/history/:friendId', authenticateUserMiddleware, async (re
   }
 });
 
+// HTTP API fallback to send private messages
+app.post('/api/messages/send', authenticateUserMiddleware, async (req: any, res) => {
+  try {
+    const { receiverId, text } = req.body;
+    const currentUserId = req.user.id;
+
+    if (!receiverId || !text || text.trim() === '') {
+      return res.status(400).json({ error: 'Nội dung tin nhắn không hợp lệ' });
+    }
+
+    const rId = parseInt(receiverId);
+    if (isNaN(rId)) {
+      return res.status(400).json({ error: 'Mã người nhận không hợp lệ' });
+    }
+
+    // Insert secure message to SQLite DB
+    const result = await dbRun(
+      'INSERT INTO messages (sender_id, receiver_id, message_text) VALUES (?, ?, ?)',
+      [currentUserId, rId, text.trim()]
+    );
+
+    const timeStr = new Date().toISOString();
+
+    const responsePayload = {
+      id: result.id,
+      senderId: currentUserId,
+      receiverId: rId,
+      text: text.trim(),
+      createdAt: timeStr,
+      readStatus: 0,
+      isRecalled: 0
+    };
+
+    // Attempt to broadcast to active WebSockets if open
+    const wsPayload = JSON.stringify({
+      type: 'message_recv',
+      id: result.id,
+      senderId: currentUserId,
+      text: text.trim(),
+      createdAt: timeStr
+    });
+
+    const destinationSocket = activeSockets.get(rId);
+    if (destinationSocket && destinationSocket.readyState === WebSocket.OPEN) {
+      try {
+        destinationSocket.send(wsPayload);
+      } catch (wsErr) {
+        console.error("HTTP broadcast failed on destination WS:", wsErr);
+      }
+    }
+
+    // Also send an acknowledgment to sender's socket if open
+    const senderSocket = activeSockets.get(currentUserId);
+    if (senderSocket && senderSocket.readyState === WebSocket.OPEN) {
+      try {
+        senderSocket.send(JSON.stringify({
+          type: 'message_ack',
+          id: result.id,
+          receiverId: rId,
+          text: text.trim(),
+          createdAt: timeStr
+        }));
+      } catch (wsErr) {
+        console.error("HTTP broadcast failed on sender WS:", wsErr);
+      }
+    }
+
+    res.json(responsePayload);
+  } catch (error) {
+    console.error("HTTP send message failed:", error);
+    res.status(500).json({ error: 'Không thể gửi tin nhắn qua máy chủ' });
+  }
+});
+
 // Feeds: timeline list
 app.get('/api/feeds/list', authenticateUserMiddleware, async (req: any, res) => {
   try {
@@ -1098,6 +1172,79 @@ app.get('/api/groups/:groupId/messages', authenticateUserMiddleware, async (req:
   } catch (err) {
     console.error("Get group messages failed:", err);
     res.status(500).json({ error: 'Không thể tải lịch sử tin nhắn nhóm' });
+  }
+});
+
+// HTTP API fallback to send group messages
+app.post('/api/groups/messages/send', authenticateUserMiddleware, async (req: any, res) => {
+  try {
+    const { groupId, text } = req.body;
+    const currentUserId = req.user.id;
+
+    if (!groupId || !text || text.trim() === '') {
+      return res.status(400).json({ error: 'Nội dung tin nhắn không hợp lệ' });
+    }
+
+    const gIdNum = parseInt(groupId);
+    if (isNaN(gIdNum)) {
+      return res.status(400).json({ error: 'Mã nhóm không hợp lệ' });
+    }
+
+    // Verify user is in group
+    const isMember = await dbGet('SELECT id FROM group_members WHERE group_id = ? AND user_id = ?', [gIdNum, currentUserId]);
+    if (!isMember) {
+      return res.status(403).json({ error: 'Bạn không thuộc nhóm chat này' });
+    }
+
+    // Insert group message
+    const result = await dbRun(
+      'INSERT INTO group_messages (group_id, sender_id, message_text) VALUES (?, ?, ?)',
+      [gIdNum, currentUserId, text.trim()]
+    );
+
+    const timeStr = new Date().toISOString();
+
+    // Fetch sender details
+    const sender = await dbGet('SELECT username, avatar FROM users WHERE id = ?', [currentUserId]);
+
+    const responsePayload = {
+      id: result.id,
+      senderId: currentUserId,
+      text: text.trim(),
+      createdAt: timeStr,
+      senderName: sender?.username || 'User',
+      senderAvatar: sender?.avatar || '',
+      isRecalled: 0
+    };
+
+    // Broadcast to everyone in the group
+    const members = await dbAll('SELECT user_id FROM group_members WHERE group_id = ?', [gIdNum]);
+    const wsPayload = JSON.stringify({
+      type: 'group_message_recv',
+      id: result.id,
+      groupId: gIdNum,
+      senderId: currentUserId,
+      senderName: sender?.username || 'User',
+      senderAvatar: sender?.avatar || '',
+      text: text.trim(),
+      createdAt: timeStr
+    });
+
+    members.forEach((memb: any) => {
+      const memberSocket = activeSockets.get(memb.user_id);
+      if (memberSocket && memberSocket.readyState === WebSocket.OPEN) {
+        try {
+          memberSocket.send(wsPayload);
+        } catch (wsErr) {
+          console.error("HTTP group broadcast failed on member socket:", wsErr);
+        }
+      }
+    });
+
+    res.json(responsePayload);
+  } catch (err) {
+    console.error("HTTP send group message error:", err);
+    res.status(500).json({ error: 'Không thể gửi tin nhắn nhóm qua máy chủ' });
   }
 });
 
