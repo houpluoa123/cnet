@@ -23,8 +23,6 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [successMsg, setSuccessMsg] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
-  const [showSyncCmd, setShowSyncCmd] = useState<boolean>(false);
-  const [copied, setCopied] = useState<boolean>(false);
 
   const avatarOptions = [
     'https://api.dicebear.com/7.x/pixel-art/svg?seed=Felix',
@@ -34,50 +32,6 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     'https://api.dicebear.com/7.x/pixel-art/svg?seed=Buster',
     'https://api.dicebear.com/7.x/pixel-art/svg?seed=Milo'
   ];
-
-  const handleQuickBypassLogin = async () => {
-    setIsLoading(true);
-    setErrorMsg('');
-    setSuccessMsg('');
-    try {
-      const targetUser = username.trim() || 'admin_demo';
-      const res = await fetch('/api/auth/bypass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: targetUser })
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('Đường truyền phản hồi từ máy chủ không hợp lệ (Không phải JSON). Việc này xảy ra khi Cloudflare Tunnel bắt đầu thử thách trình duyệt hoặc bị chặn/định tuyến nhầm.');
-      }
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Đăng nhập nhanh thất bại.');
-      }
-
-      setSuccessMsg('Đăng nhập nhanh thành công tuyệt đối!');
-      setTimeout(() => {
-        onAuthSuccess(data.token, data.user);
-      }, 550);
-    } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || 'Lỗi bất định khi gửi tín hiệu Đăng Nhập Nhanh.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCopyCmd = () => {
-    const origin = window.location.origin;
-    const cmd = `curl -sLO ${origin}/api/sync/znet-patcher.sh && bash znet-patcher.sh`;
-    navigator.clipboard.writeText(cmd);
-    setCopied(true);
-    setTimeout(() => {
-      setCopied(false);
-    }, 2000);
-  };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -323,65 +277,6 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
             )}
           </button>
         </form>
-
-        {/* Quick Bypass Button specifically for bypassing local port / Cloudflare Tunnel routing JSON issues */}
-        {isLogin && !require2FA && (
-          <div className="mt-4 pt-1" id="dev_bypass_auth_container">
-            <button
-              type="button"
-              onClick={handleQuickBypassLogin}
-              disabled={isLoading}
-              className="w-full h-11 flex items-center justify-center gap-2 bg-slate-950/40 hover:bg-slate-950/85 border border-amber-500/20 hover:border-amber-500/40 text-amber-400 rounded-xl font-bold text-xs transition duration-250 cursor-pointer disabled:opacity-50 select-none"
-              id="dev_bypass_auth_btn"
-            >
-              <Zap className="w-3.5 h-3.5 text-amber-555 animate-pulse" />
-              Lối Tắt Đăng Nhập Nhanh (Sửa Lỗi JSON Cloudflare)
-            </button>
-            <p className="text-[10px] text-slate-500 text-center mt-2.5 max-w-[90%] mx-auto leading-normal">
-              Bỏ qua bước kiểm tra mật khẩu/OTP để vào thẳng giao diện nếu Cloudflare Tunnel chặn POST request!
-            </p>
-
-            <div className="mt-3.5 p-3 bg-slate-950/50 rounded-xl border border-indigo-500/10 hover:border-indigo-500/20 transition text-left" id="vps_sync_panel">
-              <button
-                type="button"
-                onClick={() => setShowSyncCmd(!showSyncCmd)}
-                className="w-full flex items-center justify-between text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition focus:outline-none"
-              >
-                <span className="flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5 text-indigo-500" />
-                  Một dòng lệnh sửa lỗi dán VPS (/root/znet)
-                </span>
-                <span className="text-[9px] text-slate-500">{showSyncCmd ? 'Ẩn' : 'Xem'}</span>
-              </button>
-              
-              {showSyncCmd && (
-                <div className="mt-2 space-y-2">
-                  <p className="text-[10px] text-slate-400 leading-normal">
-                    Dán dòng lệnh duy nhất này vào terminal VPS để cập nhật tự động toàn bộ code sửa lỗi JSON và kích hoạt Đăng Nhập Nhanh:
-                  </p>
-                  <div className="relative flex items-center bg-slate-900 border border-slate-800 rounded-lg p-2">
-                    <code className="text-[10px] text-amber-300 font-mono break-all pr-8 select-all">
-                      curl -sLO {window.location.origin}/api/sync/znet-patcher.sh && bash znet-patcher.sh
-                    </code>
-                    <button
-                      type="button"
-                      onClick={handleCopyCmd}
-                      className="absolute right-2 p-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white transition"
-                      title="Sao chép lệnh"
-                    >
-                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                  {copied && (
-                    <span className="block text-[9px] text-emerald-400 font-bold text-right animate-pulse">
-                      Đã sao chép xong! Sẵn sàng dán vào VPS.
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         <div className="mt-6 pt-5 border-t border-slate-800/80 text-center relative z-10" id="auth_mode_toggle_container">
           <button

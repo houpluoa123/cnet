@@ -507,49 +507,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Bypass API route for Quick Developer Sandbox Login (bypass cloudflare redirect errors / mock database access)
-app.post('/api/auth/bypass', async (req, res) => {
-  try {
-    const defaultUsername = (req.body.username || 'admin_demo').trim();
-    let user = await dbGet('SELECT * FROM users WHERE username = ?', [defaultUsername]);
-    
-    if (!user) {
-      const defaultAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
-      const defaultHash = hashPassword('znet123456');
-      
-      // Determine role: if there are no users, the first active user gets 'admin' role
-      const countRes = await dbGet('SELECT COUNT(*) as count FROM users');
-      const isFirstUser = countRes ? countRes.count === 0 : true;
-      const role = isFirstUser ? 'admin' : (defaultUsername === 'admin_demo' ? 'admin' : 'user');
-      
-      const insertRes = await dbRun(
-        `INSERT INTO users (username, password_hash, avatar, status, two_factor_enabled, two_factor_secret, role)
-         VALUES (?, ?, ?, ?, 0, '', ?)`,
-        [defaultUsername, defaultHash, defaultAvatar, 'Chế độ Trải nghiệm Nhanh', role]
-      );
-      
-      user = await dbGet('SELECT * FROM users WHERE id = ?', [insertRes.id]);
-    }
-    
-    const token = signToken({ id: user.id, username: user.username });
-    res.json({
-      success: true,
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        avatar: user.avatar,
-        status: user.status,
-        twoFactorEnabled: false,
-        role: user.role || 'user'
-      }
-    });
-  } catch (err: any) {
-    console.error("Bypass login endpoint exception:", err);
-    res.status(500).json({ error: 'Chức năng Đăng Nhập Nhanh gặp sự cố cơ sở dữ liệu: ' + err.message });
-  }
-});
-
 // Get self infomation
 app.get('/api/auth/me', authenticateUserMiddleware, async (req: any, res) => {
   try {
@@ -2307,8 +2264,8 @@ initializeDatabase().then(async () => {
 
       const script = `#!/bin/bash
 # ==============================================================================
-# ZNET AUTOMATIC SYNC & PATCHER UTILITY SCRIPT (v1.0.2)
-# Khắc phục triệt để lỗi JSON login, vượt rào cản Cloudflare tunnel, bảo toàn giao diện
+# ZNET AUTOMATIC SYNC & PATCHER UTILITY SCRIPT (v1.0.3)
+# Tự động đồng bộ mã nguồn hoàn chỉnh, đồng bộ giao diện và khắc phục lỗi Cloudflare
 # ==============================================================================
 
 RED='\\033[0;31m'
@@ -2321,7 +2278,7 @@ BOLD='\\033[1m'
 
 clear
 echo -e "\${CYAN}\${BOLD}=========================================================================\${NC}"
-echo -e "\${CYAN}\${BOLD}         HỆ THỐNG ĐỒNG BỘ DỰ ÁN & SỬA LỖI ĐĂNG NHẬP ZNET TỰ ĐỘNG         \${NC}"
+echo -e "\${CYAN}\${BOLD}         HỆ THỐNG ĐỒNG BỘ DỰ ÁN & ĐỒNG BỘ GIAO DIỆN ZNET TỰ ĐỘNG         \${NC}"
 echo -e "\${CYAN}\${BOLD}=========================================================================\${NC}"
 echo -e "Nguồn Workspace AI Studio: \${BLUE}${workspaceUrl}\${NC}"
 echo ""
@@ -2365,13 +2322,13 @@ download_patch_file() {
     fi
 }
 
-# Tải xuống toàn bộ 4 tệp cốt lõi được vá lỗi JSON & Đăng Nhập Nhanh
+# Tải xuống toàn bộ 4 tệp cốt lõi được cập nhật sạch sẽ
 download_patch_file "server.ts" "server.ts"
 download_patch_file "src/App.tsx" "src/App.tsx"
 download_patch_file "src/components/AuthForm.tsx" "src/components/AuthForm.tsx"
 download_patch_file "src/components/ExportDocsSection.tsx" "src/components/ExportDocsSection.tsx"
 
-echo -e "\${GREEN}✅ Đã cập nhật 100% mã nguồn vá lỗi đăng nhập và vượt rào Cloudflare Tunnel!\${NC}"
+echo -e "\${GREEN}✅ Đã cập nhật 100% mã nguồn sạch mới nhất từ AI Studio!\${NC}"
 
 # 4. Tiến hành Biên Dịch (npm run build)
 echo -e "\${BLUE}🛠️  Đang biên dịch build lại dự án Front-End và Express Server bằng Vite & Esbuild...\${NC}"
@@ -2397,9 +2354,9 @@ fi
 
 echo -e "\${GREEN}\${BOLD}=========================================================================\${NC}"
 echo -e "\${GREEN}\${BOLD} 🎉  ĐỒNG BỘ HOÀN TẤT & KHẮC PHỤC LỖI THÀNH CÔNG RỰC RỠ!                 \${NC}"
-echo -e "\${GREEN}\${BOLD}     - Đã cài đặt Lối Tắt Đăng Nhập Nhanh (Bypass Cloudflare Tunnel JSON)\${NC}"
+echo -e "\${GREEN}\${BOLD}     - Đã dọn dẹp các lối tắt gỡ lỗi, đồng bộ mã nguồn an toàn thành công\${NC}"
 echo -e "\${GREEN}\${BOLD}     - Giữ nguyên 100% phong cách thiết kế, giao diện, dữ liệu\${NC}"
-echo -e "\${GREEN}\${BOLD}     - Hãy tải lại trang web trên trình duyệt của bạn để tận hưởng!     \${NC}"
+echo -e "\${GREEN}\${BOLD}     - Hãy tải lại trang web trên trình duyệt của bạn để nhận bản cập nhật!  \${NC}"
 echo -e "\${GREEN}\${BOLD}=========================================================================\${NC}"
 `;
       res.setHeader('Content-Type', 'application/x-sh');
