@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZNet - Giao diện Thiết kế Hợp nhất (Mockup Sinh động)</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          scale: {
+            '115': '1.15',
+          },
+          animation: {
+            'pulse-fast': 'pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'fade-in': 'fadeIn 0.25s ease-out forwards',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbars */
+    .scrollbar-none::-webkit-scrollbar {
+      display: none;
+    }
+    .scrollbar-none {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .znet-viewport-container::-webkit-scrollbar-thumb,
+    div::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.2);
+      border-radius: 9999px;
+    }
+    .znet-viewport-container::-webkit-scrollbar-thumb:hover,
+    div::-webkit-scrollbar-thumb:hover {
+      background: rgba(100, 116, 139, 0.4);
+    }
+
+    /* Elegant Fade In Animation matching original react-motion style */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Multi-Theme Core Classes */
+    /* 1. COSMIC THEME (Default template) - Dark purple/indigo accents on charcoal */
+    .theme-cosmic {
+      --bg-main: #020617; /* slate-950 */
+      --bg-panel: #0f172a; /* slate-900 */
+      --bg-inner: #020617; /* slate-950/40 */
+      --bg-card: rgba(15, 23, 42, 0.6);
+      --border-color: #1e293b; /* slate-800 */
+      --border-highlight: rgba(99, 102, 241, 0.2); /* indigo-500/20 */
+      --text-primary: #f8fafc; /* slate-50 */
+      --text-secondary: #94a3b8; /* slate-400 */
+      --text-muted: #64748b; /* slate-500 */
+      --accent-color: #6366f1; /* indigo-500 */
+      --accent-hover: #4f46e5; /* indigo-600 */
+      --accent-soft: rgba(99, 102, 241, 0.1);
+      --status-online: #10b981; /* emerald-500 */
+    }
+
+    /* 2. BLACK & WHITE DARK THEME (Mono-Dark) - High contrast dark grayscale */
+    .theme-mono-dark {
+      --bg-main: #020202;
+      --bg-panel: #080808;
+      --bg-inner: #101010;
+      --bg-card: #141414;
+      --border-color: #222222;
+      --border-highlight: #444444;
+      --text-primary: #ffffff;
+      --text-secondary: #a3a3a3; /* neutral-400 */
+      --text-muted: #737373; /* neutral-500 */
+      --accent-color: #525252; /* neutral-600 */
+      --accent-hover: #404040; /* neutral-700 */
+      --accent-soft: rgba(255, 255, 255, 0.05);
+      --status-online: #ffffff;
+    }
+
+    /* 3. BLACK & WHITE LIGHT THEME (Mono-Light) - Balanced crisp light grayscale */
+    .theme-mono-light {
+      --bg-main: #f8f9fa;
+      --bg-panel: #ffffff;
+      --bg-inner: #f1f3f5;
+      --bg-card: #ffffff;
+      --border-color: #e2e8f0; /* border-slate-200 */
+      --border-highlight: #cbd5e1; /* border-slate-300 */
+      --text-primary: #0f172a; /* slate-900 */
+      --text-secondary: #475569; /* slate-600 */
+      --text-muted: #64748b; /* slate-500 */
+      --accent-color: #1e293b; /* slate-800 */
+      --accent-hover: #0f172a; /* slate-900 */
+      --accent-soft: rgba(15, 23, 42, 0.05);
+      --status-online: #0f172a;
+    }
+
+    /* Apply Dynamic Theme Variable Styles */
+    .theme-engine {
+      background-color: var(--bg-main) !important;
+      color: var(--text-primary) !important;
+      font-family: 'Inter', sans-serif;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+    
+    .theme-engine-panel {
+      background-color: var(--bg-panel) !important;
+      border-color: var(--border-color) !important;
+    }
+
+    .theme-engine-inner {
+      background-color: var(--bg-inner) !important;
+    }
+
+    .theme-engine-card {
+      background-color: var(--bg-card) !important;
+      border-color: var(--border-color) !important;
+    }
+
+    .theme-engine-border {
+      border-color: var(--border-color) !important;
+    }
+
+    .theme-engine-border-highlight {
+      border-color: var(--border-highlight) !important;
+    }
+
+    .theme-engine-text-primary {
+      color: var(--text-primary) !important;
+    }
+
+    .theme-engine-text-secondary {
+      color: var(--text-secondary) !important;
+    }
+
+    .theme-engine-text-muted {
+      color: var(--text-muted) !important;
+    }
+
+    .theme-engine-accent-btn {
+      background-color: var(--accent-color) !important;
+    }
+    .theme-engine-accent-btn:hover {
+      background-color: var(--accent-hover) !important;
+    }
+    
+    .theme-engine-accent-soft {
+      background-color: var(--accent-soft) !important;
+      color: var(--text-primary) !important;
+    }
+    
+    .theme-engine-status-online {
+      background-color: var(--status-online) !important;
+    }
+
+    .theme-engine-status-online-border {
+      border-color: var(--status-online) !important;
+    }
+
+    /* State Switcher CSS */
+    .view-panel {
+      display: none;
+    }
+    .view-panel.active-panel {
+      display: flex !important;
+    }
+  </style>
+</head>
+<body class="bg-black select-none font-sans overflow-hidden">
+
+  <!-- Main Parent Container with Theme Engine -->
+  <div id="app_viewport" class="theme-engine theme-cosmic min-h-screen text-slate-100 flex flex-col relative w-full h-screen overflow-hidden">
+    
+    <!-- Top Global Header Bar -->
+    <header class="h-14 theme-engine-border border-b px-4 flex items-center justify-between shrink-0 bg-slate-950/20 backdrop-blur" id="global_header">
+      
+      <!-- Brand & Project Title -->
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 theme-engine-accent-btn">
+          <i data-lucide="shield" class="w-4 h-4"></i>
+        </div>
+        <div class="flex flex-col">
+          <span class="text-xs font-black font-sans tracking-tight text-white uppercase leading-none">Mạng lưới ZNet</span>
+          <span class="text-[9px] theme-engine-text-muted font-mono uppercase mt-1 tracking-widest">Không gian Mật mã Bảo mật</span>
+        </div>
+      </div>
+
+      <!-- Center Network Stats/UTC Status (Anti-AI-Slop, Clean Human design layout) -->
+      <div class="hidden md:flex items-center gap-4 text-[10px]">
+        <div class="flex items-center gap-1.5 theme-engine-text-secondary bg-slate-950/40 px-2.5 py-1 rounded-lg border border-slate-800/40 theme-engine-border">
+          <span class="w-1.5 h-1.5 rounded-full theme-engine-status-online animate-pulse-fast"></span>
+          <span class="font-bold tracking-tight">KẾT NỐI BẢO MẬT</span>
+        </div>
+        <div class="flex items-center gap-1 theme-engine-text-muted">
+          <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+          <span id="current_time_display" class="font-mono">2026-06-17 07:15 UTC</span>
+        </div>
+      </div>
+
+      <!-- Quick Actions / Theme / Fullscreen control -->
+      <div class="flex items-center gap-3">
+        
+        <!-- Theme Controls (Inline Quick Switcher) -->
+        <div class="flex items-center gap-0.5 bg-slate-950/50 rounded-xl p-0.5 border border-slate-800/40 theme-engine-border col-span-3">
+          <button onclick="setTheme('cosmic')" id="btn_theme_cosmic" class="px-2 py-1 rounded-lg text-[8px] font-extrabold uppercase transition-all bg-indigo-600 text-white leading-none cursor-pointer">
+            Tinh Vân
+          </button>
+          <button onclick="setTheme('mono-dark')" id="btn_theme_mono_dark" class="px-2 py-1 rounded-lg text-[8px] font-extrabold uppercase transition-all text-slate-400 hover:text-white leading-none cursor-pointer">
+            B&W Tối
+          </button>
+          <button onclick="setTheme('mono-light')" id="btn_theme_mono_light" class="px-2 py-1 rounded-lg text-[8px] font-extrabold uppercase transition-all text-slate-400 hover:text-slate-800 leading-none cursor-pointer">
+            B&W Sáng
+          </button>
+        </div>
+
+        <span class="theme-engine-text-muted text-xs">|</span>
+
+        <!-- Dynamic Fullscreen Control Widget -->
+        <button onclick="toggleFullscreen()" class="p-2 rounded-xl border border-slate-800/45 hover:border-slate-750 transition-all text-slate-400 hover:text-white theme-engine-border cursor-pointer flex items-center justify-center" title="Bật/Tắt toàn màn hình">
+          <i id="fullscreen_icon" data-lucide="maximize" class="w-3.5 h-3.5"></i>
+        </button>
+
+        <span class="theme-engine-text-muted text-xs">|</span>
+
+        <!-- User Brief -->
+        <div class="flex items-center gap-2">
+          <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Avatar" class="w-7 h-7 rounded-lg object-cover border border-slate-800" />
+          <span class="hidden sm:inline text-[10px] font-bold text-white tracking-tight">Cường Trần</span>
+        </div>
+      </div>
+
+    </header>
+
+    <!-- Main Workspace Area -->
+    <div class="flex-1 flex w-full overflow-hidden relative">
+
+      <!-- Left Ribbon Navigation & Selector Sidebar -->
+      <aside class="w-60 theme-engine-border border-r flex flex-col shrink-0 theme-engine-panel bg-slate-900/40" id="sidebar_rail">
+        
+        <!-- Active Module/Screen Tabs -->
+        <div class="p-3.5 space-y-1 flex-1 overflow-y-auto scrollbar-none">
+          
+          <span class="text-[9px] font-bold theme-engine-text-muted uppercase tracking-wider block px-2.5 mb-2">Mạng lưới giao lưu</span>
+
+          <!-- Tab 1: Chat đơn -->
+          <button onclick="switchView('private_chat_view')" id="tab_private_chat_view" class="w-full flex items-center justify-between p-2.5 rounded-xl transition cursor-pointer text-left bg-indigo-600/15 border border-indigo-500/20 text-indigo-400">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <i data-lucide="message-square" class="w-4 h-4 shrink-0"></i>
+              <span class="text-[11px] font-bold truncate">Trò chuyện Bảo mật</span>
+            </div>
+            <span class="bg-rose-500 text-white text-[8px] font-bold w-1.5 h-1.5 rounded-full"></span>
+          </button>
+
+          <!-- Tab 2: Nhóm chat -->
+          <button onclick="switchView('group_chat_view')" id="tab_group_chat_view" class="w-full flex items-center justify-between p-2.5 rounded-xl transition cursor-pointer text-left theme-engine-text-secondary hover:bg-slate-950/40 border border-transparent">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <i data-lucide="users" class="w-4 h-4 shrink-0"></i>
+              <span class="text-[11px] font-bold truncate">Hội nhóm ZNet</span>
+            </div>
+            <span class="text-[9px] font-black bg-indigo-500/10 text-indigo-400 px-1 py-0.5 rounded leading-none">#{2}</span>
+          </button>
+
+          <!-- Tab 3: Bạn bè -->
+          <button onclick="switchView('friends_view')" id="tab_friends_view" class="w-full flex items-center gap-2.5 p-2.5 rounded-xl transition cursor-pointer text-left theme-engine-text-secondary hover:bg-slate-950/40 border border-transparent">
+            <i data-lucide="user-plus" class="w-4 h-4 shrink-0"></i>
+            <span class="text-[11px] font-bold truncate">Mối liên kết bằng hữu</span>
+          </button>
+
+          <!-- Tab 4: Bản tin feed -->
+          <button onclick="switchView('feed_view')" id="tab_feed_view" class="w-full flex items-center gap-2.5 p-2.5 rounded-xl transition cursor-pointer text-left theme-engine-text-secondary hover:bg-slate-950/40 border border-transparent">
+            <i data-lucide="rss" class="w-4 h-4 shrink-0"></i>
+            <span class="text-[11px] font-bold truncate">Bản tin Nhật ký</span>
+          </button>
+
+          <!-- Divider -->
+          <div class="h-px bg-slate-800/40 theme-engine-border my-3.5"></div>
+
+          <span class="text-[9px] font-bold theme-engine-text-muted uppercase tracking-wider block px-2.5 mb-2">Hệ thống & Cấu hình</span>
+
+          <!-- Tab 5: Admin Panel & Settings -->
+          <button onclick="switchView('admin_view')" id="tab_admin_view" class="w-full flex items-center gap-2.5 p-2.5 rounded-xl transition cursor-pointer text-left theme-engine-text-secondary hover:bg-slate-950/40 border border-transparent">
+            <i data-lucide="activity" class="w-4 h-4 shrink-0"></i>
+            <span class="text-[11px] font-bold truncate">Bảng Điều khiển Admin</span>
+          </button>
+
+        </div>
+
+        <!-- Sidebar Footer Theme Quick Select Card (Aesthetic Pairings) -->
+        <div class="p-3.5 border-t border-slate-850/80 theme-engine-border" id="sidebar_theme_card">
+          <div class="p-3 bg-slate-950/20 border border-slate-850/60 rounded-2xl theme-engine-card text-center relative overflow-hidden space-y-1.5">
+            <span class="text-[8px] font-bold theme-engine-text-muted uppercase tracking-widest block leading-none">Chủ đề Giao diện</span>
+            <span class="text-[10px] text-white font-extrabold block" id="active_theme_label">Tinh Vân (Mặc định)</span>
+            <p class="text-[8px] theme-engine-text-muted">Nhấp vào nút chủ đề phía trên để đổi sang Trắng/Đen một cách nhanh chóng.</p>
+          </div>
+        </div>
+
+      </aside>
+
+      <!-- Main Visual Stage Container -->
+      <main class="flex-1 flex flex-col overflow-hidden relative theme-engine-inner" id="stage_container">
+
+        <!-- VIEW 1: TRÒ CHUYỆN BẢO MẬT (PRIVATE CHAT WINDOW) -->
+        <section id="private_chat_view" class="view-panel active-panel flex-1 flex flex-col overflow-hidden h-full">
+          
+          <!-- View Header -->
+          <div class="h-14 border-b px-4 flex items-center justify-between shrink-0 bg-slate-900/10 theme-engine-border">
+            <div class="flex items-center gap-3">
+              <div class="relative">
+                <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Friend avatar" class="w-9 h-9 rounded-xl object-cover border border-slate-850" />
+                <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-slate-900 bg-emerald-500"></span>
+              </div>
+              <div>
+                <h3 class="text-white text-xs font-bold leading-none flex items-center gap-1.5">
+                  Nguyễn Thị Linh
+                  <span class="text-[8px] font-medium text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded leading-none">Đang online</span>
+                </h3>
+                <p class="text-[9px] theme-engine-text-muted mt-1 leading-none">Khóa bảo mật: SHA-256 E2E • Đang gửi tin tức</p>
+              </div>
+            </div>
+
+            <!-- Header Operations -->
+            <div class="flex items-center gap-1">
+              <button class="p-1 px-1.5 text-[9px] font-semibold text-slate-400 hover:text-white hover:bg-slate-800 rounded transition cursor-pointer flex items-center gap-1">
+                <i data-lucide="download" class="w-3.5 h-3.5 text-slate-500"></i> Xuất cuộc chat
+              </button>
+            </div>
+          </div>
+
+          <!-- Chat Messages Scroll Container -->
+          <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-4" id="private_chat_history">
+            
+            <!-- Recipient Message -->
+            <div class="flex items-start gap-2.5 max-w-lg">
+              <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Friend" class="w-7 h-7 rounded-lg object-cover border border-slate-850 shrink-0 mt-0.5" />
+              <div>
+                <div class="bg-slate-900/60 text-slate-100 p-3.5 rounded-2xl rounded-tl-none border border-slate-850/60 text-xs leading-relaxed theme-engine-card shadow-sm">
+                  Chào Linh, cuộc hội họp của nhóm chúng ta hôm nay có dời lên sớm 30 phút không vậy?
+                </div>
+                <span class="text-[8px] theme-engine-text-muted mt-1 ml-1 block font-mono">15:30 UTC</span>
+              </div>
+            </div>
+
+            <!-- Self Message -->
+            <div class="flex items-start gap-2.5 justify-end max-w-lg ml-auto">
+              <div class="text-right">
+                <div class="bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 p-3.5 rounded-2xl rounded-tr-none text-xs leading-relaxed shadow-sm text-left animate-fade-in theme-engine-accent-soft">
+                  Có nhé! Mọi người đã thống nhất chuyển lịch hẹn lúc 19:30 sang 19:00 để thuận tiện cho việc ăn tối.
+                </div>
+                <span class="text-[8px] theme-engine-text-muted mt-1 mr-1 block font-mono">15:32 UTC • Đã truyền thành công</span>
+              </div>
+              <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Self" class="w-7 h-7 rounded-lg object-cover border border-slate-850 shrink-0 mt-0.5" />
+            </div>
+
+            <!-- Simulated live-added message hook -->
+            <div id="private_live_hook" class="space-y-4"></div>
+
+            <!-- Typist state indicator -->
+            <div class="flex items-center gap-1.5 text-[9px] theme-engine-text-muted italic px-2">
+              <span class="w-1.5 h-1.5 rounded-full theme-engine-status-online animate-pulse-fast"></span>
+              Linh đang nhập mật dung...
+            </div>
+
+          </div>
+
+          <!-- Bottom Chat Composer Control Box -->
+          <div class="p-4 border-t border-slate-850/80 theme-engine-border bg-slate-900/20 shrink-0 relative" id="private_chat_composer">
+            
+            <form onsubmit="handleSendPrivate(event)" class="flex gap-2 relative">
+              <div class="relative flex-1">
+                <input 
+                  type="text" 
+                  id="private_chat_input" 
+                  placeholder="Nhập nội dung mật mã, tin nhắn mã hóa..." 
+                  class="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl py-3.5 pl-4 pr-11 text-xs focus:outline-none focus:border-indigo-500 transition-all theme-engine-border"
+                />
+                
+                <!-- Emoji toggle button inside input bar -->
+                <button 
+                  type="button" 
+                  onclick="toggleEmojiPicker('private')" 
+                  class="absolute right-3.5 top-3 p-0.5 text-slate-500 hover:text-indigo-400 transition cursor-pointer"
+                  title="Biểu tượng cảm xúc"
+                >
+                  <i data-lucide="smile" class="w-5 h-5"></i>
+                </button>
+
+                <!-- Embedded Emoji Picker Popover -->
+                <div id="emoji_picker_private" class="hidden absolute bottom-14 right-2 z-50 w-64 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-3 flex flex-col space-y-2.5 theme-engine-card text-left text-xs animate-fade-in">
+                  <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block border-b border-slate-850 pb-1.5 mb-1">Click chọn Emotion nhanh:</span>
+                  <div class="grid grid-cols-7 gap-1.5 text-center">
+                    <button type="button" onclick="insertEmoji('private', '😀')" class="p-2 hover:bg-slate-800 rounded text-lg transition">😀</button>
+                    <button type="button" onclick="insertEmoji('private', '😂')" class="p-2 hover:bg-slate-800 rounded text-lg transition">😂</button>
+                    <button type="button" onclick="insertEmoji('private', '😍')" class="p-2 hover:bg-slate-800 rounded text-lg transition">😍</button>
+                    <button type="button" onclick="insertEmoji('private', '👍')" class="p-2 hover:bg-slate-800 rounded text-lg transition">👍</button>
+                    <button type="button" onclick="insertEmoji('private', '🔥')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🔥</button>
+                    <button type="button" onclick="insertEmoji('private', '🎉')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🎉</button>
+                    <button type="button" onclick="insertEmoji('private', '✨')" class="p-2 hover:bg-slate-800 rounded text-lg transition">✨</button>
+                    <button type="button" onclick="insertEmoji('private', '😢')" class="p-2 hover:bg-slate-800 rounded text-lg transition">😢</button>
+                    <button type="button" onclick="insertEmoji('private', '🥺')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🥺</button>
+                    <button type="button" onclick="insertEmoji('private', '🤬')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🤬</button>
+                    <button type="button" onclick="insertEmoji('private', '❤️')" class="p-2 hover:bg-slate-800 rounded text-lg transition">❤️</button>
+                    <button type="button" onclick="insertEmoji('private', '💡')" class="p-2 hover:bg-slate-800 rounded text-lg transition">💡</button>
+                    <button type="button" onclick="insertEmoji('private', '🐶')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🐶</button>
+                    <button type="button" onclick="insertEmoji('private', '🎂')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🎂</button>
+                  </div>
+                </div>
+
+              </div>
+              <button type="submit" class="p-3.5 bg-indigo-600 rounded-2xl text-white hover:bg-indigo-750 transition flex items-center justify-center shrink-0 theme-engine-accent-btn cursor-pointer">
+                <i data-lucide="send" class="w-4 h-4"></i>
+              </button>
+            </form>
+
+          </div>
+        </section>
+
+        <!-- VIEW 2: HỘI NHÓM ZNET - NHÓM CHAT (GROUP CHAT WINDOW + MEMBERS MODAL) -->
+        <section id="group_chat_view" class="view-panel flex-1 flex flex-col overflow-hidden h-full">
+          
+          <!-- View Header - Clickable to open Members List Modal -->
+          <div class="h-14 border-b px-4 flex items-center justify-between shrink-0 bg-slate-900/10 theme-engine-border">
+            
+            <!-- Clickable group information header -->
+            <div 
+              onclick="openMembersModal()" 
+              class="flex items-center gap-3 cursor-pointer hover:bg-slate-950/40 p-1.5 px-2 rounded-xl transition group/groupinfo" 
+              title="Nhấp vào đây để xem danh sách thành viên & vai trò"
+            >
+              <div class="w-9 h-9 rounded-xl bg-indigo-600/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
+                <i data-lucide="users" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <h3 class="text-white text-xs font-bold leading-none flex items-center gap-2 group-hover/groupinfo:text-indigo-400 transition">
+                  <span id="header_group_name">Ban Sáng Sáng Tạo ZNet</span>
+                  <span class="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border border-amber-550/20 bg-amber-500/10 text-amber-400">Riêng tư</span>
+                </h3>
+                <p class="text-[9px] theme-engine-text-muted mt-1 leading-none group-hover/groupinfo:text-indigo-300 transition">Mã số nhóm: #1 • <span class="underline">4 thành viên</span> • Nhấp để xem danh sách</p>
+              </div>
+            </div>
+
+            <!-- Operations inside group detail header -->
+            <div class="flex items-center gap-1.5">
+              <button class="p-1.5 bg-indigo-600/15 text-indigo-400 border border-indigo-500/10 text-[9px] rounded-lg hover:bg-indigo-600/25 transition cursor-pointer flex items-center gap-1">
+                <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Mời bạn mới
+              </button>
+            </div>
+          </div>
+
+          <!-- Group messages history container -->
+          <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-4" id="group_chat_history">
+            
+            <!-- Group notice/system card (Anti-Ai-Slop, Balanced) -->
+            <div class="max-w-xs mx-auto text-center py-2 bg-slate-950/40 rounded-xl border border-slate-850/60 theme-engine-card">
+              <p class="text-[8px] theme-engine-text-muted uppercase tracking-wider">Hệ thống mật hóa tạo kênh bảo mật đầu cuối bảo an</p>
+            </div>
+
+            <!-- Recipient Message: Group Member A -->
+            <div class="flex items-start gap-2.5 max-w-lg">
+              <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100&q=80" alt="Hồng Hoa" class="w-7 h-7 rounded-lg object-cover border border-slate-850 shrink-0 mt-0.5" />
+              <div>
+                <span class="text-[9px] font-bold text-slate-400 ml-1 mb-1 block">Hồng Hoa • <span class="text-amber-400 text-[8px] font-extrabold uppercase">Chủ nhóm</span></span>
+                <div class="bg-slate-900/60 text-slate-100 p-3.5 rounded-2xl rounded-tl-none border border-slate-850/60 text-xs leading-relaxed theme-engine-card shadow-sm">
+                  Xin chào cả team! Buổi thuyết trình tiến độ mới cho ứng dụng ZNet đã sẵn sàng. Ngày mai chúng ta sẽ bắt đầu review nhé.
+                </div>
+                <span class="text-[8px] theme-engine-text-muted mt-1 ml-1 block font-mono">Hôm qua 23:40 UTC</span>
+              </div>
+            </div>
+
+            <!-- Recipient Message: Group Member B -->
+            <div class="flex items-start gap-2.5 max-w-lg">
+              <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&q=80" alt="Đại Dương" class="w-7 h-7 rounded-lg object-cover border border-slate-850 shrink-0 mt-0.5" />
+              <div>
+                <span class="text-[9px] font-bold text-slate-400 ml-1 mb-1 block">Đại Dương • Thành viên</span>
+                <div class="bg-slate-900/60 text-slate-100 p-3.5 rounded-2xl rounded-tl-none border border-slate-850/60 text-xs leading-relaxed theme-engine-card shadow-sm">
+                  Tuyệt vời chị ơi! Em đã chuẩn bị xong các mockup thiết kế cho phía người dùng cuối rồi.
+                </div>
+                <span class="text-[8px] theme-engine-text-muted mt-1 ml-1 block font-mono">Hôm nay 01:15 UTC</span>
+              </div>
+            </div>
+
+            <!-- Self Message -->
+            <div class="flex items-start gap-2.5 justify-end max-w-lg ml-auto">
+              <div class="text-right">
+                <span class="text-[9px] font-bold text-slate-400 mr-1 mb-1 block">Bạn (Cường Trần) • Thành viên</span>
+                <div class="bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 p-3.5 rounded-2xl rounded-tr-none text-xs leading-relaxed shadow-sm text-left animate-fade-in theme-engine-accent-soft">
+                  Cảm ơn anh chị nhé, sáng mai em sẽ trực tiếp tham dự và ghi nhận phản hồi để hoàn chỉnh tiến độ nạp mã lõi hệ thống.
+                </div>
+                <span class="text-[8px] theme-engine-text-muted mt-1 mr-1 block font-mono">Vừa xong • Đã truyền</span>
+              </div>
+              <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Self" class="w-7 h-7 rounded-lg object-cover border border-slate-850 shrink-0 mt-0.5" />
+            </div>
+
+            <!-- Simulated live-added message hook -->
+            <div id="group_live_hook" class="space-y-4"></div>
+
+          </div>
+
+          <!-- Bottom Group Composer -->
+          <div class="p-4 border-t border-slate-850/80 theme-engine-border bg-slate-900/20 shrink-0" id="group_chat_composer">
+            
+            <form onsubmit="handleSendGroup(event)" class="flex gap-2 relative">
+              <div class="relative flex-1">
+                <input 
+                  type="text" 
+                  id="group_chat_input" 
+                  placeholder="Nhập mật chỉ thị trò chuyện hội nhóm..." 
+                  class="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl py-3.5 pl-4 pr-11 text-xs focus:outline-none focus:border-indigo-500 transition-all theme-engine-border"
+                />
+                
+                <!-- Emoji toggle button inside group input -->
+                <button 
+                  type="button" 
+                  onclick="toggleEmojiPicker('group')" 
+                  class="absolute right-3.5 top-3 p-0.5 text-slate-500 hover:text-indigo-400 transition cursor-pointer"
+                  title="Biểu tượng cảm xúc"
+                >
+                  <i data-lucide="smile" class="w-5 h-5"></i>
+                </button>
+
+                <!-- Embedded Emoji Picker Popover -->
+                <div id="emoji_picker_group" class="hidden absolute bottom-14 right-2 z-50 w-64 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-3 flex flex-col space-y-2.5 theme-engine-card text-left text-xs animate-fade-in">
+                  <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block border-b border-slate-850 pb-1.5 mb-1">Chọn Emotion nhanh:</span>
+                  <div class="grid grid-cols-7 gap-1.5 text-center">
+                    <button type="button" onclick="insertEmoji('group', '😀')" class="p-2 hover:bg-slate-800 rounded text-lg transition">😀</button>
+                    <button type="button" onclick="insertEmoji('group', '😄')" class="p-2 hover:bg-slate-800 rounded text-lg transition">😄</button>
+                    <button type="button" onclick="insertEmoji('group', '😍')" class="p-2 hover:bg-slate-800 rounded text-lg transition">😍</button>
+                    <button type="button" onclick="insertEmoji('group', '👍')" class="p-2 hover:bg-slate-800 rounded text-lg transition">👍</button>
+                    <button type="button" onclick="insertEmoji('group', '🔥')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🔥</button>
+                    <button type="button" onclick="insertEmoji('group', '🚀')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🚀</button>
+                    <button type="button" onclick="insertEmoji('group', '💖')" class="p-2 hover:bg-slate-800 rounded text-lg transition">💖</button>
+                    <button type="button" onclick="insertEmoji('group', '👏')" class="p-2 hover:bg-slate-800 rounded text-lg transition">👏</button>
+                    <button type="button" onclick="insertEmoji('group', '🙌')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🙌</button>
+                    <button type="button" onclick="insertEmoji('group', '⭐')" class="p-2 hover:bg-slate-800 rounded text-lg transition">⭐</button>
+                    <button type="button" onclick="insertEmoji('group', '🍿')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🍿</button>
+                    <button type="button" onclick="insertEmoji('group', '☕')" class="p-2 hover:bg-slate-800 rounded text-lg transition">☕</button>
+                    <button type="button" onclick="insertEmoji('group', '🐱')" class="p-2 hover:bg-slate-800 rounded text-lg transition">🐱</button>
+                    <button type="button" onclick="insertEmoji('group', '💪')" class="p-2 hover:bg-slate-800 rounded text-lg transition">💪</button>
+                  </div>
+                </div>
+
+              </div>
+              <button type="submit" class="p-3.5 bg-indigo-600 rounded-2xl text-white hover:bg-indigo-750 transition flex items-center justify-center shrink-0 theme-engine-accent-btn cursor-pointer">
+                <i data-lucide="send" class="w-4 h-4"></i>
+              </button>
+            </form>
+
+          </div>
+        </section>
+
+        <!-- VIEW 3: BẠN BÈ MỐI LIÊN KẾT (FRIENDS VIEW) -->
+        <section id="friends_view" class="view-panel flex-1 flex flex-col overflow-hidden h-full">
+          <!-- Header -->
+          <div class="h-14 border-b px-4 flex items-center justify-between shrink-0 bg-slate-900/10 theme-engine-border">
+            <div class="flex items-center gap-2">
+              <i data-lucide="user-plus" class="w-4 h-4 text-indigo-400"></i>
+              <div>
+                <h3 class="text-white text-xs font-bold uppercase tracking-wider block">Danh sách Bằng hữu</h3>
+                <p class="text-[9px] theme-engine-text-muted mt-0.5">Quản lý và tương tác nhanh với các tài khoản kết nối</p>
+              </div>
+            </div>
+            
+            <button class="py-1 px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-extrabold rounded-lg transition theme-engine-accent-btn flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Thêm liên kết mới
+            </button>
+          </div>
+
+          <!-- Friends List -->
+          <div class="flex-1 overflow-y-auto p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            <!-- Friend Card 1 -->
+            <div class="p-4 rounded-2xl bg-slate-900/40 border border-slate-850 flex items-center justify-between theme-engine-border hover:border-slate-800 transition">
+              <div class="flex items-center gap-3">
+                <div class="relative">
+                  <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Friend A" class="w-10 h-10 rounded-xl object-cover border border-slate-800" />
+                  <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-slate-900 bg-emerald-500"></span>
+                </div>
+                <div>
+                  <h4 class="text-white text-xs font-extrabold block">Nguyễn Thị Linh</h4>
+                  <span class="text-[9px] text-emerald-400 font-medium">Bận một chút</span>
+                  <p class="text-[8px] theme-engine-text-muted mt-0.5">Khoá mật mã: SHA-256 Valid</p>
+                </div>
+              </div>
+              <button onclick="quickChatTo('Nguyễn Thị Linh')" class="p-2 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-xl transition border border-indigo-500/10 cursor-pointer">
+                <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <!-- Friend Card 2 -->
+            <div class="p-4 rounded-2xl bg-slate-900/40 border border-slate-850 flex items-center justify-between theme-engine-border hover:border-slate-800 transition">
+              <div class="flex items-center gap-3">
+                <div class="relative">
+                  <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100&q=80" alt="Friend B" class="w-10 h-10 rounded-xl object-cover border border-slate-800" />
+                  <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-slate-900 bg-emerald-500 animate-pulse"></span>
+                </div>
+                <div>
+                  <h4 class="text-white text-xs font-extrabold block">Hồng Hoa</h4>
+                  <span class="text-[9px] text-emerald-400 font-medium">Sẵn sàng phản hồi</span>
+                  <p class="text-[8px] theme-engine-text-muted mt-0.5">Khoá mật mã: SHA-256 Valid</p>
+                </div>
+              </div>
+              <button onclick="quickChatTo('Hồng Hoa')" class="p-2 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-xl transition border border-indigo-500/10 cursor-pointer">
+                <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <!-- Friend Card 3 -->
+            <div class="p-4 rounded-2xl bg-slate-900/40 border border-slate-850 flex items-center justify-between theme-engine-border hover:border-slate-800 transition">
+              <div class="flex items-center gap-3">
+                <div class="relative">
+                  <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&q=80" alt="Friend C" class="w-10 h-10 rounded-xl object-cover border border-slate-800" />
+                  <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-slate-900 bg-slate-500"></span>
+                </div>
+                <div>
+                  <h4 class="text-white text-xs font-extrabold block">Đại Dương</h4>
+                  <span class="text-[9px] theme-engine-text-muted font-medium">Offline</span>
+                  <p class="text-[8px] theme-engine-text-muted mt-0.5">Khoá mật mã: SHA-256 Valid</p>
+                </div>
+              </div>
+              <button onclick="quickChatTo('Đại Dương')" class="p-2 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-xl transition border border-indigo-500/10 cursor-pointer">
+                <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- VIEW 4: BẢN TIN NHẬT KÝ (FEED VIEW) -->
+        <section id="feed_view" class="view-panel flex-1 flex flex-col overflow-hidden h-full">
+          <!-- Header -->
+          <div class="h-14 border-b px-4 flex items-center justify-between shrink-0 bg-slate-900/10 theme-engine-border">
+            <div class="flex items-center gap-2">
+              <i data-lucide="rss" class="w-4 h-4 text-indigo-400"></i>
+              <div>
+                <h3 class="text-white text-xs font-bold uppercase tracking-wider block">Bản tin Nhật ký mã hóa</h3>
+                <p class="text-[9px] theme-engine-text-muted mt-0.5">Khám phá hoạt động và bài đăng từ mạng lưới bằng hữu</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Feed Feed Body -->
+          <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 max-w-2xl mx-auto w-full">
+            
+            <!-- Feed Creator Bar -->
+            <div class="p-4 bg-slate-900/40 rounded-2xl border border-slate-850 theme-engine-border">
+              <div class="flex items-center gap-3">
+                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Self" class="w-8 h-8 rounded-xl object-cover border border-slate-850 shrink-0" />
+                <input type="text" placeholder="Hôm nay bạn muốn chia sẻ điều mật mã gì?" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 text-xs focus:outline-none focus:border-indigo-500 transition-all theme-engine-border text-white" />
+                <button class="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-750 transition theme-engine-accent-btn cursor-pointer">
+                  Đăng tải
+                </button>
+              </div>
+            </div>
+
+            <!-- Feed Post 1 -->
+            <div class="p-5 rounded-2xl bg-slate-900/40 border border-slate-850 theme-engine-border space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100&q=80" alt="Hồng Hoa" class="w-9 h-9 rounded-xl object-cover border border-slate-850" />
+                  <div>
+                    <h4 class="text-white text-xs font-extrabold flex items-center gap-1.5 leading-none">
+                      Hồng Hoa 
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    </h4>
+                    <span class="text-[8px] theme-engine-text-muted mt-1 block">Khung thời gian bảo mật: 2 giờ trước</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="text-xs text-slate-200 leading-relaxed space-y-2">
+                <p>Một ngày làm việc thật hiệu quả cùng đội ngũ kỹ thuật ZNet! Hệ thống mã hóa thông điệp thời gian thực (E2EE) đã hoàn tất tối ưu hiệu năng đạt độ trễ tuyệt đối dưới 45ms. Quá tự hào về nỗ lực của mọi người 🚀🔥</p>
+              </div>
+
+              <!-- Likes & Feed comments summary footer -->
+              <div class="flex items-center justify-between pt-3 border-t border-slate-850/80 theme-engine-border text-[10px] text-slate-500">
+                <button class="flex items-center gap-1.5 hover:text-rose-400 transition cursor-pointer">
+                  <i data-lucide="heart" class="w-4 h-4"></i> Thích • 24
+                </button>
+                <div class="flex items-center gap-3">
+                  <span>2 bình luận</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- VIEW 5: BẢNG ADMIN / CẤU HÌNH (ADMIN PANEL VIEW) -->
+        <section id="admin_view" class="view-panel flex-1 flex flex-col overflow-hidden h-full">
+          <!-- Header -->
+          <div class="h-14 border-b px-4 flex items-center justify-between shrink-0 bg-slate-900/10 theme-engine-border">
+            <div class="flex items-center gap-2">
+              <i data-lucide="activity" class="w-4 h-4 text-rose-400"></i>
+              <div>
+                <h3 class="text-white text-xs font-bold uppercase tracking-wider block">Bảng điều hướng quản trị ZNet</h3>
+                <p class="text-[9px] theme-engine-text-muted mt-0.5">Quản lý cơ sở dữ liệu mã hóa tĩnh, trạng thái các bảng ghi</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Body contents -->
+          <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+            
+            <!-- Dashboard Stats Grid (No Telemetry, Human UI) -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div class="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl theme-engine-card text-left">
+                <span class="text-[9px] font-extrabold theme-engine-text-muted uppercase tracking-wider">Tổng số Tài khoản</span>
+                <p class="text-xl font-black text-white mt-1.5 font-mono">1,024</p>
+                <span class="text-[8px] text-emerald-400 inline-block bg-emerald-500/10 rounded px-1.5 py-0.5 mt-2">Hoạt động ổn định</span>
+              </div>
+              <div class="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl theme-engine-card text-left">
+                <span class="text-[9px] font-extrabold theme-engine-text-muted uppercase tracking-wider">Lượt giải mã / Ngày</span>
+                <p class="text-xl font-black text-white mt-1.5 font-mono">45,122</p>
+                <span class="text-[8px] text-emerald-400 inline-block bg-emerald-500/10 rounded px-1.5 py-0.5 mt-2">Mã khóa tin cậy</span>
+              </div>
+              <div class="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl theme-engine-card text-left">
+                <span class="text-[9px] font-extrabold theme-engine-text-muted uppercase tracking-wider">Tình trạng cơ sở dữ liệu</span>
+                <p class="text-xl font-black text-white mt-1.5 font-mono">SQLITE OK</p>
+                <span class="text-[8px] text-indigo-400 inline-block bg-indigo-500/10 rounded px-1.5 py-0.5 mt-2">Tự động nén tối ưu</span>
+              </div>
+            </div>
+
+            <!-- Security Assurance Notice Card (Aesthetic Design Conceptually) -->
+            <div class="p-5 bg-gradient-to-r from-indigo-900/10 to-indigo-800/5 rounded-2xl border border-indigo-500/20 text-left space-y-2.5">
+              <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block leading-none">Chỉ dẫn quản trị an toàn</span>
+              <p class="text-xs text-slate-300 leading-relaxed">Admin ZNet có quyền kiểm soát cấu trúc và thu hồi các nội dung đã hỏng hóc hoặc lạm dụng. Tất cả thao tác được lưu lại bằng chữ ký mật mã an toàn tuyệt đối chống can thiệp ảo.</p>
+            </div>
+
+          </div>
+        </section>
+
+      </main>
+
+    </div>
+
+    <!-- MODAL: DANH SÁCH THÀNH VIÊN NHÓM CHAT (GROUP MEMBERS MODAL) -->
+    <div id="members_modal_overlay" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+      <div class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] theme-engine-card" id="members_modal_container">
+        
+        <!-- Header -->
+        <div class="p-4 border-b border-slate-850 flex items-center justify-between theme-engine-border bg-slate-900/50">
+          <div class="flex items-center gap-2">
+            <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i>
+            <div>
+              <h4 class="text-xs font-bold text-white uppercase tracking-wider block">Thành viên nhóm</h4>
+              <p class="text-[10px] theme-engine-text-muted truncate max-w-[200px] mt-0.5">Biểu mẫu và Vai trò chi tiết</p>
+            </div>
+          </div>
+          <button onclick="closeMembersModal()" class="w-7 h-7 flex items-center justify-center rounded-xl bg-slate-950/40 hover:bg-slate-850 transition text-slate-400 hover:text-white cursor-pointer text-xs">
+            ✕
+          </button>
+        </div>
+
+        <!-- Search input inside member modal list -->
+        <div class="p-3 bg-slate-950/20 border-b border-slate-850 theme-engine-border">
+          <input 
+            type="text" 
+            id="members_filter_input" 
+            placeholder="Tìm theo biệt danh..." 
+            oninput="filterGroupMembers()" 
+            class="w-full bg-slate-950 border border-slate-800 text-white placeholder-slate-500 rounded-xl py-2 px-3 text-[10px] focus:outline-none focus:border-indigo-500 transition-all theme-engine-border"
+          />
+        </div>
+
+        <!-- Members Scrollable List Body -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-none" id="members_list_body">
+          
+          <!-- Member 1: Project Creator (Chủ nhóm) -->
+          <div class="flex items-center justify-between bg-slate-950/40 p-3 rounded-xl border border-slate-850/60 theme-engine-border hover:border-slate-800 transition member-item">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="relative">
+                <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100&q=80" alt="Hồng Hoa" class="w-8 h-8 rounded-xl object-cover border border-slate-800" />
+                <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900 bg-emerald-500"></span>
+              </div>
+              <div class="min-w-0">
+                <span class="text-[11px] font-bold text-white block truncate member-name">Hồng Hoa</span>
+                <p class="text-[8px] text-emerald-400 truncate max-w-[150px] mt-0.5">Đang thảo luận sôi nổi</p>
+              </div>
+            </div>
+            <!-- Role Badge -->
+            <span class="text-[8px] font-extrabold uppercase px-2 py-0.5 rounded border leading-none bg-amber-500/10 text-amber-400 border-amber-500/20">Chủ nhóm</span>
+          </div>
+
+          <!-- Member 2: Member (Thành viên) -->
+          <div class="flex items-center justify-between bg-slate-950/40 p-3 rounded-xl border border-slate-850/60 theme-engine-border hover:border-slate-800 transition member-item">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="relative">
+                <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=100&q=80" alt="Đại Dương" class="w-8 h-8 rounded-xl object-cover border border-slate-800" />
+                <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900 bg-slate-500"></span>
+              </div>
+              <div class="min-w-0">
+                <span class="text-[11px] font-bold text-white block truncate member-name">Đại Dương</span>
+                <p class="text-[8px] text-slate-500 truncate max-w-[150px] mt-0.5">offline</p>
+              </div>
+            </div>
+            <span class="text-[8px] font-extrabold uppercase px-2 py-0.5 rounded border leading-none bg-slate-500/10 text-slate-400 border-slate-800">Thành viên</span>
+          </div>
+
+          <!-- Member 3: Member (Thành viên) -->
+          <div class="flex items-center justify-between bg-slate-950/40 p-3 rounded-xl border border-slate-850/60 theme-engine-border hover:border-slate-800 transition member-item">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="relative">
+                <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80" alt="Linh Nguyễn" class="w-8 h-8 rounded-xl object-cover border border-slate-800" />
+                <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900 bg-emerald-500 animate-pulse-fast"></span>
+              </div>
+              <div class="min-w-0">
+                <span class="text-[11px] font-bold text-white block truncate member-name">Nguyễn Thị Linh</span>
+                <p class="text-[8px] text-slate-500 truncate max-w-[150px] mt-0.5">Bận một chút</p>
+              </div>
+            </div>
+            <span class="text-[8px] font-extrabold uppercase px-2 py-0.5 rounded border leading-none bg-slate-500/10 text-slate-400 border-slate-800">Thành viên</span>
+          </div>
+
+          <!-- Member 4: Current User (Thành viên / Bạn) -->
+          <div class="flex items-center justify-between bg-slate-950/40 p-3 rounded-xl border border-slate-850/60 theme-engine-border hover:border-slate-800 transition member-item">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="relative">
+                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Bạn" class="w-8 h-8 rounded-xl object-cover border border-slate-800" />
+                <span class="absolute bottom-0 right-0 w-2 h-2 rounded-full border border-slate-900 bg-emerald-500"></span>
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-1">
+                  <span class="text-[11px] font-bold text-white block truncate member-name">Cường Trần</span>
+                  <span class="text-[8px] font-medium text-indigo-400 bg-indigo-500/10 px-1 rounded">Bạn</span>
+                </div>
+                <p class="text-[8px] text-slate-500 truncate max-w-[150px] mt-0.5">Sẵn sàng nhận lệnh</p>
+              </div>
+            </div>
+            <span class="text-[8px] font-extrabold uppercase px-2 py-0.5 rounded border leading-none bg-slate-500/10 text-slate-400 border-slate-800">Thành viên</span>
+          </div>
+
+        </div>
+
+        <!-- Footer information -->
+        <div class="p-3 border-t border-slate-850 theme-engine-border bg-slate-900/30 flex items-center justify-between text-[9px] text-slate-500 px-4">
+          <span>Ban Sáng Tạo ZNet</span>
+          <span>Số lượng: 4 thành viên</span>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Vanila JS Simulator & View/Theme Routing Logic -->
+  <script>
+    // Load default settings on initialization
+    document.addEventListener('DOMContentLoaded', () => {
+      // Initialize Lucide Icons globally
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
+      
+      // Realtime local UTC clock simulation (Anti-AI-Slop, Clean human helper)
+      setInterval(() => {
+        const d = new Date();
+        const formatted = d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+        const el = document.getElementById('current_time_display');
+        if (el) el.textContent = formatted;
+      }, 1000);
+    });
+
+    // Theme Switcher Engine Functions
+    function setTheme(theme) {
+      const container = document.getElementById('app_viewport');
+      const label = document.getElementById('active_theme_label');
+      
+      // Clean previous theme classes
+      container.classList.remove('theme-cosmic', 'theme-mono-dark', 'theme-mono-light');
+      
+      // Remove BG overriding classes to make themes uniform
+      const themeButtons = [
+        document.getElementById('btn_theme_cosmic'),
+        document.getElementById('btn_theme_mono_dark'),
+        document.getElementById('btn_theme_mono_light')
+      ];
+      
+      themeButtons.forEach(btn => {
+        if(btn) {
+          btn.className = "px-2 py-1 rounded-lg text-[8px] font-extrabold uppercase transition-all text-slate-400 hover:text-white leading-none cursor-pointer";
+        }
+      });
+
+      if (theme === 'cosmic') {
+        container.classList.add('theme-cosmic');
+        label.textContent = "Tinh Vân (Mặc định)";
+        document.getElementById('btn_theme_cosmic').className = "px-2 py-1 rounded-lg text-[8px] font-extrabold uppercase transition-all bg-indigo-600 text-white leading-none cursor-pointer";
+      } else if (theme === 'mono-dark') {
+        container.classList.add('theme-mono-dark');
+        label.textContent = "B&W Tối (Monochrome)";
+        document.getElementById('btn_theme_mono_dark').className = "px-2 py-1 rounded-lg text-[8px] font-extrabold uppercase transition-all bg-neutral-700 text-white leading-none cursor-pointer";
+      } else if (theme === 'mono-light') {
+        container.classList.add('theme-mono-light');
+        label.textContent = "B&W Sáng (Crisp Light)";
+        document.getElementById('btn_theme_mono_light').className = "px-2 py-1 rounded-lg text-[8px] font-extrabold uppercase transition-all bg-neutral-300 text-neutral-900 leading-none cursor-pointer";
+      }
+    }
+
+    // Fullscreen View Mode Switcher
+    let isFullscreenMode = false;
+    function toggleFullscreen() {
+      const stage = document.getElementById('stage_container');
+      const sidebar = document.getElementById('sidebar_rail');
+      const header = document.getElementById('global_header');
+      const icon = document.getElementById('fullscreen_icon');
+
+      isFullscreenMode = !isFullscreenMode;
+      if (isFullscreenMode) {
+        sidebar.classList.add('hidden');
+        header.classList.add('hidden');
+        icon.setAttribute('data-lucide', 'minimize');
+      } else {
+        sidebar.classList.remove('hidden');
+        header.classList.remove('hidden');
+        icon.setAttribute('data-lucide', 'maximize');
+      }
+      
+      if (window.lucide) {
+        window.lucide.createIcons();
+      }
+    }
+
+    // Left Ribbon Tabs View Switcher logic
+    function switchView(viewId) {
+      // Hide all panes
+      const panels = document.querySelectorAll('.view-panel');
+      panels.forEach(p => p.classList.remove('active-panel'));
+
+      // De-active all tab buttons styling
+      const tabs = [
+        { id: 'tab_private_chat_view', activeStyle: 'bg-indigo-600/15 border-indigo-500/20 text-indigo-400' },
+        { id: 'tab_group_chat_view', activeStyle: 'bg-indigo-600/15 border-indigo-500/20 text-indigo-400' },
+        { id: 'tab_friends_view', activeStyle: 'bg-indigo-600/15 border-indigo-500/20 text-indigo-400' },
+        { id: 'tab_feed_view', activeStyle: 'bg-indigo-600/15 border-indigo-500/20 text-indigo-400' },
+        { id: 'tab_admin_view', activeStyle: 'bg-rose-600/15 border-rose-500/20 text-rose-450' },
+      ];
+
+      tabs.forEach(t => {
+        const el = document.getElementById(t.id);
+        if (el) {
+          el.className = "w-full flex items-center gap-2.5 p-2.5 rounded-xl transition cursor-pointer text-left theme-engine-text-secondary hover:bg-slate-950/40 border border-transparent";
+        }
+      });
+
+      // Activate chosen view panel
+      const targetPanel = document.getElementById(viewId);
+      if (targetPanel) {
+        targetPanel.classList.add('active-panel');
+      }
+
+      // Activate chosen tab style
+      const targetTab = document.getElementById('tab_' + viewId);
+      if (targetTab) {
+        const scheme = tabs.find(t => t.id === 'tab_' + viewId);
+        targetTab.className = "w-full flex items-center justify-between p-2.5 rounded-xl transition cursor-pointer text-left " + scheme.activeStyle;
+      }
+      
+      // Auto-scrolling to bottom for chat screens when opened
+      if (viewId === 'private_chat_view') {
+        setTimeout(() => {
+          const chatHist = document.getElementById('private_chat_history');
+          chatHist.scrollTop = chatHist.scrollHeight;
+        }, 50);
+      } else if (viewId === 'group_chat_view') {
+        setTimeout(() => {
+          const groupHist = document.getElementById('group_chat_history');
+          groupHist.scrollTop = groupHist.scrollHeight;
+        }, 50);
+      }
+    }
+
+    // Popover Emoji Toggle functions
+    function toggleEmojiPicker(type) {
+      const picker = document.getElementById('emoji_picker_' + type);
+      if (picker) {
+        picker.classList.toggle('hidden');
+      }
+    }
+
+    // Insert selected emoji to specific text area
+    function insertEmoji(type, emoji) {
+      const input = document.getElementById(type + '_chat_input');
+      if (input) {
+        input.value += emoji;
+        input.focus();
+      }
+      toggleEmojiPicker(type); // close popover container
+    }
+
+    // Group Message Members Modal controllers
+    function openMembersModal() {
+      document.getElementById('members_modal_overlay').classList.remove('hidden');
+      document.getElementById('members_filter_input').focus();
+    }
+
+    function closeMembersModal() {
+      document.getElementById('members_modal_overlay').classList.add('hidden');
+      document.getElementById('members_filter_input').value = '';
+      filterGroupMembers(); // reset list filters
+    }
+
+    function filterGroupMembers() {
+      const q = document.getElementById('members_filter_input').value.toLowerCase();
+      const items = document.querySelectorAll('.member-item');
+      items.forEach(item => {
+        const nameText = item.querySelector('.member-name').textContent.toLowerCase();
+        if (nameText.includes(q)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    }
+
+    // Action Dispatch Simulator - Mock adding live text chat (E2EE style feedback)
+    function handleSendPrivate(e) {
+      e.preventDefault();
+      const input = document.getElementById('private_chat_input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      const hook = document.getElementById('private_live_hook');
+      const newMsg = document.createElement('div');
+      newMsg.className = "flex items-start gap-2.5 justify-end max-w-lg ml-auto";
+      newMsg.innerHTML = `
+        <div class="text-right">
+          <div class="bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 p-3.5 rounded-2xl rounded-tr-none text-xs leading-relaxed shadow-sm text-left animate-fade-in theme-engine-accent-soft">
+            ${escapeHTML(val)}
+          </div>
+          <span class="text-[8px] theme-engine-text-muted mt-1 mr-1 block font-mono">Vừa xong • Đã mật hóa gửi đi</span>
+        </div>
+        <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Self" class="w-7 h-7 rounded-lg object-cover border border-slate-850 shrink-0 mt-0.5" />
+      `;
+      hook.appendChild(newMsg);
+      input.value = '';
+
+      // Scroll to bottom immediately
+      const chatHist = document.getElementById('private_chat_history');
+      chatHist.scrollTop = chatHist.scrollHeight;
+    }
+
+    function handleSendGroup(e) {
+      e.preventDefault();
+      const input = document.getElementById('group_chat_input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      const hook = document.getElementById('group_live_hook');
+      const newMsg = document.createElement('div');
+      newMsg.className = "flex items-start gap-2.5 justify-end max-w-lg ml-auto";
+      newMsg.innerHTML = `
+        <div class="text-right">
+          <span class="text-[9px] font-bold text-slate-400 mr-1 mb-1 block">Bạn (Cường Trần) • Thành viên</span>
+          <div class="bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 p-3.5 rounded-2xl rounded-tr-none text-xs leading-relaxed shadow-sm text-left animate-fade-in theme-engine-accent-soft">
+            ${escapeHTML(val)}
+          </div>
+          <span class="text-[8px] theme-engine-text-muted mt-1 mr-1 block font-mono">Vừa xong • Mật truyền</span>
+        </div>
+        <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80" alt="Self" class="w-7 h-7 rounded-lg object-cover border border-slate-850 shrink-0 mt-0.5" />
+      `;
+      hook.appendChild(newMsg);
+      input.value = '';
+
+      // Scroll to bottom immediately
+      const groupHist = document.getElementById('group_chat_history');
+      groupHist.scrollTop = groupHist.scrollHeight;
+    }
+
+    function quickChatTo(name) {
+      if (name === 'Nguyễn Thị Linh') {
+        switchView('private_chat_view');
+      } else {
+        // Change recipient name briefly to match the interactive simulator
+        switchView('private_chat_view');
+        // Simple visual mockup tweak
+        const titles = document.querySelectorAll('h3.text-white');
+        if (titles.length > 0) {
+          // just mock visual switcher title
+        }
+      }
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[tag] || tag)
+      );
+    }
+  </script>
+
+</body>
+</html>
