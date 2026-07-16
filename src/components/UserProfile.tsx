@@ -4,8 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import { User, Shield, ShieldCheck, Key, ShieldAlert, Sparkles, Check, CheckCircle2 } from 'lucide-react';
+import { User, Shield, ShieldCheck, Key, ShieldAlert, Sparkles, Check, CheckCircle2, Chrome } from 'lucide-react';
 import { User as UserType } from '../types';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider } from '../lib/firebase';
 
 interface UserProfileProps {
   token: string;
@@ -21,6 +23,65 @@ export default function UserProfile({ token, user, onProfileUpdate, onLogout }: 
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const [profileMsg, setProfileMsg] = useState<string>('');
   const [profileError, setProfileError] = useState<string>('');
+
+  // Google Link States
+  const [isLinkingGoogle, setIsLinkingGoogle] = useState<boolean>(false);
+  const [googleLinkMsg, setGoogleLinkMsg] = useState<string>('');
+  const [googleLinkError, setGoogleLinkError] = useState<string>('');
+
+  const handleLinkGoogle = async () => {
+    if (!auth) {
+      setGoogleLinkError('Hệ thống Firebase Auth chưa được khởi tạo.');
+      return;
+    }
+    setGoogleLinkMsg('');
+    setGoogleLinkError('');
+    setIsLinkingGoogle(true);
+
+    try {
+      console.log("[ZNET GOOGLE LINK] Triggering Firebase Google Popup for linking...");
+      const result = await signInWithPopup(auth, googleProvider);
+      const googleUser = result.user;
+
+      if (!googleUser || !googleUser.email) {
+        throw new Error('Đăng nhập Google thành công nhưng không lấy được thông tin email.');
+      }
+
+      const res = await fetch('/api/auth/google-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          googleId: googleUser.uid,
+          email: googleUser.email
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Yêu cầu liên kết Google bị máy chủ từ chối.');
+      }
+
+      setGoogleLinkMsg('Liên kết tài khoản Google thành công!');
+      onProfileUpdate({
+        googleId: googleUser.uid,
+        email: googleUser.email
+      });
+    } catch (err: any) {
+      console.error("[ZNET GOOGLE LINK] Link Google failed:", err);
+      let msg = err.message || 'Liên kết Google thất bại. Vui lòng thử lại!';
+      if (err.code === 'auth/popup-closed-by-user' || msg.includes('popup-closed-by-user')) {
+        msg = 'Cửa sổ đăng nhập Google đã bị đóng. Nếu bạn đang chạy ứng dụng trong khung xem trước AI Studio (iframe), vui lòng bấm nút "Mở trong tab mới" ở trên để đăng nhập Google thành công!';
+      } else if (err.code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
+        msg = 'Trình duyệt chặn popup. Hãy cấp quyền popup cho trang này và thử lại trong tab mới!';
+      }
+      setGoogleLinkError(msg);
+    } finally {
+      setIsLinkingGoogle(false);
+    }
+  };
 
   // 2FA Setup state flow
   const [isSettingUp2FA, setIsSettingUp2FA] = useState<boolean>(false);
@@ -399,6 +460,65 @@ export default function UserProfile({ token, user, onProfileUpdate, onLogout }: 
                   {isUpdatingPwd ? 'Đang cập nhật mật khẩu...' : 'Xác Nhận Đổi Mật Khẩu'}
                 </button>
               </form>
+            )}
+          </div>
+
+          {/* Section: Google Account Link */}
+          <div className="bg-slate-950/20 p-5 rounded-2xl border border-slate-800/50 space-y-4" id="profile_google_link_section">
+            <div className="flex items-center gap-2">
+              <Chrome className="w-4 h-4 text-rose-500" />
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                Liên kết Google Account
+              </h4>
+            </div>
+
+            {user.googleId ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3 rounded-xl">
+                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-[11px]">Đã liên kết tài khoản Google</p>
+                    {user.email && <p className="text-[10px] opacity-80 font-mono mt-0.5">{user.email}</p>}
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Bây giờ bạn có thể đăng nhập trực tiếp vào ZNet bằng tài khoản Google này hoặc bằng mật khẩu thông thường.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  Tài khoản của bạn chưa được liên kết với Google. Hãy thực hiện liên kết để có thể chọn đăng nhập bằng mật khẩu hoặc Google lần sau!
+                </p>
+
+                {typeof window !== 'undefined' && window.self !== window.top && (
+                  <div className="bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] p-3 rounded-xl leading-relaxed space-y-1">
+                    <p className="font-semibold">⚠️ Lưu ý xem trước (Iframe Detected):</p>
+                    <p>Vì ứng dụng đang hiển thị trong khung của AI Studio, cơ chế Popup bảo mật của Google có thể bị trình duyệt chặn hoặc đóng sớm. Hãy <strong>mở ứng dụng trong Tab mới</strong> (bấm nút mũi tên ở góc trên bên phải) trước khi nhấn liên kết!</p>
+                  </div>
+                )}
+                
+                {googleLinkMsg && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-2.5 rounded-xl">
+                    {googleLinkMsg}
+                  </div>
+                )}
+                {googleLinkError && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs p-2.5 rounded-xl">
+                    {googleLinkError}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleLinkGoogle}
+                  disabled={isLinkingGoogle}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-950 border border-slate-800 hover:border-slate-700 disabled:opacity-50 text-slate-200 rounded-xl py-2.5 font-semibold text-xs transition cursor-pointer"
+                >
+                  <Chrome className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>{isLinkingGoogle ? 'Đang xử lý...' : 'Liên kết tài khoản Google'}</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

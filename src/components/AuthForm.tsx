@@ -17,14 +17,119 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [isLogin, setIsLogin] = useState<boolean>(true);
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [email, setEmail] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
   const [require2FA, setRequire2FA] = useState<boolean>(false);
+
+  // Secure real email OTP verification states
+  const [requireRegisterOTP, setRequireRegisterOTP] = useState<boolean>(false);
+  const [registerOtp, setRegisterOtp] = useState<string>('');
+  const [requireGoogleOTP, setRequireGoogleOTP] = useState<boolean>(false);
+  const [googleOtp, setGoogleOtp] = useState<string>('');
+  const [googlePayload, setGooglePayload] = useState<any>(null);
   
   // Design states
   const [selectedAvatar, setSelectedAvatar] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [successMsg, setSuccessMsg] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
+
+    // Forgot / Reset password state
+  const [forgotMode, setForgotMode] = useState<'none' | 'request' | 'reset'>('none');
+  const [resetUser, setResetUser] = useState<string>('');
+  const [resetCode, setResetCode] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [simulatedCode, setSimulatedCode] = useState<string>('');
+  const [etherealUrl, setEtherealUrl] = useState<string>('');
+
+  const handleRequestResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetUser.trim()) {
+      setErrorMsg('Vui lòng nhập tên tài khoản hoặc email!');
+      return;
+    }
+    setErrorMsg('');
+    setSuccessMsg('');
+    setIsLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail: resetUser.trim() })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Yêu cầu phục hồi mật khẩu thất bại.');
+      }
+
+      setSuccessMsg(data.message);
+      if (data.code) {
+        setSimulatedCode(data.code);
+      }
+      if (data.etherealUrl) {
+        setEtherealUrl(data.etherealUrl);
+      } else {
+        setEtherealUrl('');
+      }
+      setForgotMode('reset');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Lỗi hệ thống khi gửi mã xác nhận.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetCode.trim()) {
+      setErrorMsg('Vui lòng nhập mã xác thực OTP!');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setErrorMsg('Mật khẩu mới phải dài từ 6 ký tự trở lên!');
+      return;
+    }
+    setErrorMsg('');
+    setSuccessMsg('');
+    setIsLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usernameOrEmail: resetUser.trim(),
+          code: resetCode.trim(),
+          newPassword: newPassword
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Đặt lại mật khẩu thất bại.');
+      }
+
+      setSuccessMsg(data.message);
+      // Success! Move back to login
+      setTimeout(() => {
+        setForgotMode('none');
+        setIsLogin(true);
+        setUsername(resetUser);
+        setPassword('');
+        setResetCode('');
+        setNewPassword('');
+        setSimulatedCode('');
+        setEtherealUrl('');
+        setSuccessMsg('');
+      }, 3000);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Lỗi hệ thống khi đặt lại mật khẩu.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Cloudflare and system troubleshooting diagnostic
   const [cfDiagnostic, setCfDiagnostic] = useState<{
@@ -166,7 +271,9 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         const registerPayload = {
           username: username.trim(),
           password: password,
-          avatar: selectedAvatar || undefined
+          avatar: selectedAvatar || undefined,
+          email: email.trim() || undefined,
+          otp: requireRegisterOTP ? registerOtp.trim() : undefined
         };
 
         const res = await fetch('/api/auth/register', {
@@ -188,10 +295,16 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           throw new Error(data.error || 'Đăng ký tài khoản thất bại.');
         }
 
-        setSuccessMsg('Đăng ký tài khoản ZNet thành công! Vui lòng chuyển sang Đăng nhập.');
-        setIsLogin(true);
-        // Clear secret
-        setOtp('');
+        if (data.requireOTP) {
+          setRequireRegisterOTP(true);
+          setSuccessMsg(data.message || 'Mã xác thực đăng ký đã được gửi tới Email của bạn. Vui lòng nhập mã để hoàn tất!');
+        } else {
+          setSuccessMsg('Đăng ký tài khoản ZNet thành công! Vui lòng tiến hành đăng nhập.');
+          setIsLogin(true);
+          setRequireRegisterOTP(false);
+          setRegisterOtp('');
+          setOtp('');
+        }
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Có lỗi hệ thống xảy ra. Vui lòng thử lại!');
@@ -206,7 +319,11 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     setCfDiagnostic(null);
     setIsLogin(!isLogin);
     setRequire2FA(false);
+    setRequireRegisterOTP(false);
+    setRequireGoogleOTP(false);
     setOtp('');
+    setRegisterOtp('');
+    setGoogleOtp('');
   };
 
   const handleGoogleSignIn = async () => {
@@ -220,25 +337,35 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     setIsLoading(true);
 
     try {
-      console.log("[ZNET GOOGLE] Triggering Firebase Google Popup...");
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-      
-      if (!user || !user.email) {
-        throw new Error('Đăng nhập Google thành công nhưng không lấy được thông tin Email liên kết.');
-      }
+      let currentPayload = googlePayload;
 
-      console.log("[ZNET GOOGLE] Firebase popup success, user email:", user.email);
+      if (!currentPayload) {
+        console.log("[ZNET GOOGLE] Triggering Firebase Google Popup...");
+        const result = await signInWithPopup(auth, googleProvider);
+        const user = result.user;
+        
+        if (!user || !user.email) {
+          throw new Error('Đăng nhập Google thành công nhưng không lấy được thông tin Email liên kết.');
+        }
+
+        console.log("[ZNET GOOGLE] Firebase popup success, user email:", user.email);
+
+        currentPayload = {
+          googleId: user.uid,
+          email: user.email,
+          displayName: user.displayName || '',
+          photoURL: user.photoURL || ''
+        };
+        setGooglePayload(currentPayload);
+      }
 
       // Exchange with backend
       const res = await fetch('/api/auth/google-signin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          googleId: user.uid,
-          email: user.email,
-          displayName: user.displayName || '',
-          photoURL: user.photoURL || ''
+          ...currentPayload,
+          otp: requireGoogleOTP ? googleOtp.trim() : undefined
         })
       });
 
@@ -254,18 +381,24 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         throw new Error(data.error || 'Xác thực Google trên hệ thống ZNet thất bại.');
       }
 
-      if (data.success && data.token && data.user) {
+      if (data.requireOTP) {
+        setRequireGoogleOTP(true);
+        setSuccessMsg(data.message || 'Vui lòng nhập mã OTP gửi tới Email Google của bạn để hoàn tất đăng nhập!');
+      } else if (data.success && data.token && data.user) {
         onAuthSuccess(data.token, data.user);
+        setRequireGoogleOTP(false);
+        setGoogleOtp('');
+        setGooglePayload(null);
       }
     } catch (err: any) {
       console.error("[ZNET GOOGLE] Google sign-in failed:", err);
       let msg = err.message || 'Đăng nhập Google gặp lỗi bất ngờ. Vui lòng thử lại!';
-      if (err.code === 'auth/popup-closed-by-user') {
-        msg = 'Cửa sổ đăng nhập Google đã bị đóng trước khi hoàn tất xác thực.';
-      } else if (err.code === 'auth/cancelled-popup-request') {
+      if (err.code === 'auth/popup-closed-by-user' || msg.includes('popup-closed-by-user')) {
+        msg = 'Cửa sổ đăng nhập Google đã bị đóng. Nếu bạn đang chạy ứng dụng trong khung xem trước AI Studio (iframe), vui lòng bấm nút "Mở trong tab mới" ở góc trên bên phải để đăng nhập Google thành công!';
+      } else if (err.code === 'auth/cancelled-popup-request' || msg.includes('cancelled-popup-request')) {
         msg = 'Tiến trình đăng nhập bằng Google đã bị hủy bỏ.';
-      } else if (err.code === 'auth/popup-blocked') {
-        msg = 'Trình duyệt của bạn đã chặn cửa sổ Popup Google. Vui lòng cho phép hiện Popups cho trang web này và tải lại trang.';
+      } else if (err.code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
+        msg = 'Trình duyệt của bạn đã chặn cửa sổ Popup Google. Vui lòng cho phép hiện Popups hoặc mở ứng dụng trong tab mới để đăng nhập.';
       }
       setErrorMsg(msg);
     } finally {
@@ -339,154 +472,453 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           </div>
         )}
 
-        <form onSubmit={handleFormSubmit} className="space-y-5 relative z-10" id="auth_form_element">
-          {!require2FA ? (
-            <>
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  Tên tài khoản
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    maxLength={30}
-                    placeholder="Nhập tên đăng nhập..."
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full bg-slate-950/60 border border-slate-800 text-white rounded-xl py-3 pl-4 pr-10 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm transition"
-                    id="auth_input_username"
-                  />
-                  <Shield className="absolute right-3.5 top-3.5 w-4.5 h-4.5 text-slate-500" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  Mật khẩu bảo mật
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    required
-                    maxLength={50}
-                    placeholder="Nhập khẩu truy cập..."
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-950/60 border border-slate-800 text-white rounded-xl py-3 pl-4 pr-10 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm transition"
-                    id="auth_input_password"
-                  />
-                  <Key className="absolute right-3.5 top-3.5 w-4.5 h-4.5 text-slate-500" />
-                </div>
-              </div>
-
-              {!isLogin && (
-                <div className="space-y-2">
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Chọn Ảnh Đại Diện (Avatar)
-                  </label>
-                  <div className="grid grid-cols-6 gap-2 pt-1" id="auth_avatar_grid">
-                    {avatarOptions.map((avatarUrl, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setSelectedAvatar(avatarUrl)}
-                        className={`relative rounded-xl overflow-hidden border-2 aspect-square p-1 bg-slate-950/50 hover:scale-105 transition ${
-                          selectedAvatar === avatarUrl ? 'border-indigo-500 scale-105 ring-2 ring-indigo-500/20' : 'border-slate-850 hover:border-slate-700'
-                        }`}
-                        id={`auth_avatar_btn_${idx}`}
-                      >
-                        <img referrerPolicy="no-referrer" src={avatarUrl} alt="Avatar option" className="w-full h-full object-cover rounded-lg" />
-                        {selectedAvatar === avatarUrl && (
-                          <div className="absolute inset-0 bg-indigo-500/20 flex items-center justify-center">
-                            <Check className="w-5 h-5 text-indigo-400 stroke-[3]" />
-                          </div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-5 space-y-4 animate-fade-in" id="auth_otp_step">
-              <div className="text-center space-y-1">
-                <Shield className="w-10 h-10 text-indigo-400 mx-auto mb-2" />
-                <h3 className="text-white font-semibold text-base">Xác Nhận Đang Truy Cập</h3>
-                <p className="text-xs text-slate-400">
-                  Mở ứng dụng Google Authenticator và nhập mã OTP 6 chữ số dưới đây:
-                </p>
-              </div>
-
-              <div>
-                <input
-                  type="text"
-                  required
-                  maxLength={32}
-                  placeholder="000000"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                  className="w-full text-center bg-slate-950 border border-slate-850 text-white rounded-xl py-3 text-2xl font-mono tracking-widest focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                  id="auth_input_otp"
-                />
-                {/[a-zA-Z]/.test(otp) && (
-                  <p className="text-amber-400 text-[10px] mt-2.5 text-left bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 leading-relaxed font-sans">
-                    ⚠️ <strong>Lưu ý chữ cái:</strong> Bạn đang nhập các chữ cái vào trường OTP. Hãy mở ứng dụng Google Authenticator trên điện thoại và tìm dòng mã số gồm <strong>6 chữ số thay đổi liên tục</strong> ứng với tài khoản ZNet để nhập vào đây!
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-50 text-white rounded-xl py-3.5 font-semibold text-sm transition shadow-lg cursor-pointer hover:scale-[1.02] active:scale-95"
-            id="auth_submit_btn"
-          >
-            {isLoading ? (
-              <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : require2FA ? (
-              <>Xác Thực OTP <ChevronRight className="w-4 h-4" /></>
-            ) : isLogin ? (
-              <>Đăng Nhập Ngay <LogIn className="w-4 h-4" /></>
-            ) : (
-              <>Đăng Ký Tài Khoản <UserPlus className="w-4 h-4" /></>
-            )}
-          </button>
-        </form>
-
-        {!require2FA && (
+        {forgotMode === 'none' ? (
           <>
-            <div className="flex items-center my-4 relative z-10">
-              <div className="flex-1 border-t border-slate-800/60"></div>
-              <span className="px-3 text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Hoặc sử dụng tài khoản</span>
-              <div className="flex-1 border-t border-slate-800/60"></div>
+            {requireRegisterOTP ? (
+              <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-6 space-y-5 animate-fade-in relative z-10" id="auth_register_otp_step">
+                <div className="text-center space-y-1">
+                  <div className="inline-flex items-center justify-center w-12 h-12 bg-emerald-500/10 rounded-xl text-emerald-400 mb-2 border border-emerald-500/20">
+                    <Shield className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <h3 className="text-white font-bold text-lg">Mã Xác Thực Đăng Ký</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Hệ thống đã gửi một mã OTP gồm 6 chữ số tới Email của bạn (<strong className="text-indigo-300">{email}</strong>). Vui lòng nhập mã để kích hoạt tài khoản!
+                  </p>
+                </div>
+
+                <form onSubmit={handleFormSubmit} className="space-y-4">
+                  <div>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="Nhập 6 chữ số OTP..."
+                      value={registerOtp}
+                      onChange={(e) => setRegisterOtp(e.target.value)}
+                      className="w-full text-center bg-slate-950 border border-slate-800 text-white rounded-xl py-3.5 text-2xl font-mono tracking-[0.5em] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                      id="auth_input_register_otp"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 disabled:opacity-50 text-white rounded-xl py-3.5 font-semibold text-sm transition shadow-lg cursor-pointer hover:scale-[1.02] active:scale-95"
+                    id="auth_verify_register_otp_btn"
+                  >
+                    {isLoading ? (
+                      <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>Xác Nhận Đăng Ký Tài Khoản ✅</>
+                    )}
+                  </button>
+                </form>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRequireRegisterOTP(false);
+                      setRegisterOtp('');
+                      setSuccessMsg('');
+                      setErrorMsg('');
+                    }}
+                    className="text-xs text-slate-400 hover:text-indigo-400 hover:underline transition cursor-pointer"
+                    id="back_to_register_btn"
+                  >
+                    Quay lại biểu mẫu đăng ký
+                  </button>
+                </div>
+              </div>
+            ) : requireGoogleOTP ? (
+              <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-6 space-y-5 animate-fade-in relative z-10" id="auth_google_otp_step">
+                <div className="text-center space-y-1">
+                  <div className="inline-flex items-center justify-center w-12 h-12 bg-rose-500/10 rounded-xl text-rose-400 mb-2 border border-rose-500/20">
+                    <Chrome className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <h3 className="text-white font-bold text-lg">Xác Thực OTP Google</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Đăng nhập Google yêu cầu mã xác thực. Mã OTP 6 chữ số đã được gửi tới Email Google của bạn (<strong className="text-indigo-300">{googlePayload?.email}</strong>).
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      placeholder="Nhập 6 chữ số OTP..."
+                      value={googleOtp}
+                      onChange={(e) => setGoogleOtp(e.target.value)}
+                      className="w-full text-center bg-slate-950 border border-slate-800 text-white rounded-xl py-3.5 text-2xl font-mono tracking-[0.5em] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                      id="auth_input_google_otp"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-550 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-50 text-white rounded-xl py-3.5 font-semibold text-sm transition shadow-lg cursor-pointer hover:scale-[1.02] active:scale-95"
+                    id="auth_verify_google_otp_btn"
+                  >
+                    {isLoading ? (
+                      <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>Hoàn Tất Xác Thực Đăng Nhập 🔑</>
+                    )}
+                  </button>
+                </div>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRequireGoogleOTP(false);
+                      setGoogleOtp('');
+                      setGooglePayload(null);
+                      setSuccessMsg('');
+                      setErrorMsg('');
+                    }}
+                    className="text-xs text-slate-400 hover:text-rose-400 hover:underline transition cursor-pointer"
+                    id="cancel_google_otp_btn"
+                  >
+                    Hủy bỏ & Quay lại Đăng nhập
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <form onSubmit={handleFormSubmit} className="space-y-5 relative z-10" id="auth_form_element">
+                  {!require2FA ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                          Tên tài khoản
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            required
+                            maxLength={30}
+                            placeholder="Nhập tên đăng nhập..."
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className="w-full bg-slate-950/60 border border-slate-800 text-white rounded-xl py-3 pl-4 pr-10 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm transition"
+                            id="auth_input_username"
+                          />
+                          <Shield className="absolute right-3.5 top-3.5 w-4.5 h-4.5 text-slate-500" />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                            Mật khẩu bảo mật
+                          </label>
+                          {isLogin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForgotMode('request');
+                                setErrorMsg('');
+                                setSuccessMsg('');
+                                setSimulatedCode('');
+                              }}
+                              className="text-[11px] text-indigo-400 hover:text-indigo-300 transition hover:underline cursor-pointer font-medium"
+                              id="forgot_pwd_toggle_btn"
+                            >
+                              Quên mật khẩu?
+                            </button>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="password"
+                            required
+                            maxLength={50}
+                            placeholder="Nhập khẩu truy cập..."
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-slate-950/60 border border-slate-800 text-white rounded-xl py-3 pl-4 pr-10 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm transition"
+                            id="auth_input_password"
+                          />
+                          <Key className="absolute right-3.5 top-3.5 w-4.5 h-4.5 text-slate-500" />
+                        </div>
+                      </div>
+
+                      {!isLogin && (
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                            Địa chỉ Email (Bắt buộc để nhận mã OTP xác thực)
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="email"
+                              required
+                              placeholder="nhap-email@example.com..."
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              className="w-full bg-slate-950/60 border border-slate-800 text-white rounded-xl py-3 pl-4 pr-10 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm transition"
+                              id="auth_input_email"
+                            />
+                            <span className="absolute right-3.5 top-3.5 text-xs text-slate-500 font-bold font-mono">@</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {!isLogin && (
+                        <div className="space-y-2">
+                          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                            Chọn Ảnh Đại Diện (Avatar)
+                          </label>
+                          <div className="grid grid-cols-6 gap-2 pt-1" id="auth_avatar_grid">
+                            {avatarOptions.map((avatarUrl, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setSelectedAvatar(avatarUrl)}
+                                className={`relative rounded-xl overflow-hidden border-2 aspect-square p-1 bg-slate-950/50 hover:scale-105 transition ${
+                                  selectedAvatar === avatarUrl ? 'border-indigo-500 scale-105 ring-2 ring-indigo-500/20' : 'border-slate-850 hover:border-slate-700'
+                                }}`}
+                                id={`auth_avatar_btn_${idx}`}
+                              >
+                                <img referrerPolicy="no-referrer" src={avatarUrl} alt="Avatar option" className="w-full h-full object-cover rounded-lg" />
+                                {selectedAvatar === avatarUrl && (
+                                  <div className="absolute inset-0 bg-indigo-500/20 flex items-center justify-center">
+                                    <Check className="w-5 h-5 text-indigo-400 stroke-[3]" />
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="bg-slate-950/40 border border-slate-800/80 rounded-2xl p-5 space-y-4 animate-fade-in" id="auth_otp_step">
+                      <div className="text-center space-y-1">
+                        <Shield className="w-10 h-10 text-indigo-400 mx-auto mb-2" />
+                        <h3 className="text-white font-semibold text-base">Xác Nhận Đang Truy Cập</h3>
+                        <p className="text-xs text-slate-400">
+                          Mở ứng dụng Google Authenticator và nhập mã OTP 6 chữ số dưới đây:
+                        </p>
+                      </div>
+
+                      <div>
+                        <input
+                          type="text"
+                          required
+                          maxLength={32}
+                          placeholder="000000"
+                          value={otp}
+                          onChange={(e) => setOtp(e.target.value)}
+                          className="w-full text-center bg-slate-950 border border-slate-850 text-white rounded-xl py-3 text-2xl font-mono tracking-widest focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                          id="auth_input_otp"
+                        />
+                        {/[a-zA-Z]/.test(otp) && (
+                          <p className="text-amber-400 text-[10px] mt-2.5 text-left bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 leading-relaxed font-sans">
+                            ⚠️ <strong>Lưu ý chữ cái:</strong> Bạn đang nhập các chữ cái vào trường OTP. Hãy mở ứng dụng Google Authenticator trên điện thoại và tìm dòng mã số gồm <strong>6 chữ số thay đổi liên tục</strong> ứng với tài khoản ZNet để nhập vào đây!
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-50 text-white rounded-xl py-3.5 font-semibold text-sm transition shadow-lg cursor-pointer hover:scale-[1.02] active:scale-95"
+                    id="auth_submit_btn"
+                  >
+                    {isLoading ? (
+                      <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : require2FA ? (
+                      <>Xác Thực OTP <ChevronRight className="w-4 h-4" /></>
+                    ) : isLogin ? (
+                      <>Đăng Nhập Ngay <LogIn className="w-4 h-4" /></>
+                    ) : (
+                      <>Gửi Mã OTP Đăng Ký <UserPlus className="w-4 h-4" /></>
+                    )}
+                  </button>
+                </form>
+
+                {!require2FA && (
+                  <>
+                    <div className="flex items-center my-4 relative z-10">
+                      <div className="flex-1 border-t border-slate-800/60"></div>
+                      <span className="px-3 text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Hoặc sử dụng tài khoản</span>
+                      <div className="flex-1 border-t border-slate-800/60"></div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGoogleSignIn}
+                      disabled={isLoading}
+                      className="w-full flex items-center justify-center gap-2.5 bg-slate-950/85 hover:bg-slate-950 border border-slate-800/80 hover:border-slate-700 disabled:opacity-50 text-slate-200 rounded-xl py-3.5 font-bold text-xs transition cursor-pointer hover:scale-[1.01] active:scale-95 relative z-10"
+                      id="google_signin_btn"
+                    >
+                      <Chrome className="w-4 h-4 text-rose-500 animate-pulse" />
+                      <span>{isLogin ? 'Đăng nhập bằng Google' : 'Đăng ký bằng Google'}</span>
+                    </button>
+
+                    {typeof window !== 'undefined' && window.self !== window.top && (
+                      <div className="mt-3 bg-amber-500/5 border border-amber-500/15 text-amber-400 text-[10px] p-3 rounded-xl leading-relaxed space-y-0.5 relative z-10 text-left">
+                        <p className="font-semibold">⚠️ Khung xem trước (Iframe Detected):</p>
+                        <p>Trình duyệt sẽ chặn popup Google Auth bên trong khung này. Hãy bấm biểu tượng <strong>"Mở trong tab mới"</strong> ở trên cùng bên phải trang để đăng nhập bằng Google!</p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div className="mt-6 pt-5 border-t border-slate-800/80 text-center relative z-10" id="auth_mode_toggle_container">
+                  <button
+                    type="button"
+                    onClick={toggleAuthMode}
+                    className="text-indigo-400 hover:text-indigo-300 font-medium text-xs hover:underline transition"
+                    id="auth_toggle_mode_btn"
+                  >
+                    {isLogin ? 'Chưa có tài khoản? Hãy Đăng ký miễn phí' : 'Đã có tài khoản? Đăng nhập ngay'}
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        ) : forgotMode === 'request' ? (
+          <form onSubmit={handleRequestResetCode} className="space-y-5 relative z-10 animate-fade-in" id="forgot_password_request_form">
+            <div className="text-center space-y-1 pb-2">
+              <Key className="w-10 h-10 text-rose-500 mx-auto mb-2 animate-bounce animate-pulse" />
+              <h3 className="text-white font-bold text-base">Quên Mật Khẩu?</h3>
+              <p className="text-xs text-slate-400 leading-relaxed px-2">
+                Đừng lo lắng! Hãy nhập tên đăng nhập hoặc email của bạn. Chúng tôi sẽ khởi tạo mã OTP đặt lại mật khẩu của bạn ngay.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                Tên tài khoản hoặc Email
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Nhập username hoặc email của bạn..."
+                value={resetUser}
+                onChange={(e) => setResetUser(e.target.value)}
+                className="w-full bg-slate-950/60 border border-slate-800 text-white rounded-xl py-3 px-4 focus:outline-none focus:border-indigo-500 text-sm transition"
+                id="forgot_input_user"
+              />
             </div>
 
             <button
-              type="button"
-              onClick={handleGoogleSignIn}
+              type="submit"
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2.5 bg-slate-950/85 hover:bg-slate-950 border border-slate-800/80 hover:border-slate-700 disabled:opacity-50 text-slate-200 rounded-xl py-3.5 font-bold text-xs transition cursor-pointer hover:scale-[1.01] active:scale-95 relative z-10"
-              id="google_signin_btn"
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl py-3.5 font-semibold text-sm transition shadow-lg cursor-pointer"
             >
-              <Chrome className="w-4 h-4 text-rose-500 animate-pulse" />
-              <span>{isLogin ? 'Đăng nhập bằng Google' : 'Đăng ký bằng Google'}</span>
+              {isLoading ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : 'Gửi mã OTP vào Email 📩'}
             </button>
-          </>
-        )}
 
-        <div className="mt-6 pt-5 border-t border-slate-800/80 text-center relative z-10" id="auth_mode_toggle_container">
-          <button
-            type="button"
-            onClick={toggleAuthMode}
-            className="text-indigo-400 hover:text-indigo-300 font-medium text-xs hover:underline transition"
-            id="auth_toggle_mode_btn"
-          >
-            {isLogin ? 'Chưa có tài khoản? Hãy Đăng ký miễn phí' : 'Đã có tài khoản? Đăng nhập ngay'}
-          </button>
-        </div>
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setForgotMode('none')}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold hover:underline transition cursor-pointer"
+              >
+                Quay lại màn hình Đăng nhập
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleResetPassword} className="space-y-5 relative z-10 animate-fade-in" id="forgot_password_reset_form">
+            <div className="text-center space-y-1 pb-2">
+              <Shield className="w-10 h-10 text-emerald-500 mx-auto mb-2 animate-pulse" />
+              <h3 className="text-white font-bold text-base">Nhập Mã Xác Minh</h3>
+              <p className="text-xs text-slate-400 px-2 leading-relaxed">
+                Hệ thống đã gửi một email chứa mã xác minh OTP gồm 6 chữ số tới địa chỉ Email của bạn. Hãy kiểm tra hòm thư và điền mã dưới đây:
+              </p>
+            </div>
+
+            {etherealUrl && (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs p-4 rounded-xl space-y-2.5 animate-pulse leading-relaxed">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-400">
+                  <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                  <span>📬 HÒM THƯ EMAIL THỰC TẾ</span>
+                </div>
+                <p>Do máy chủ được khởi tạo ở chế độ phát triển (AI Studio Sandbox), thư điện tử thật đã được gửi thành công qua máy chủ test <strong>Ethereal Email</strong>.</p>
+                <div className="pt-1">
+                  <a
+                    href={etherealUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold px-3.5 py-2 rounded-xl text-[11px] transition shadow-md active:scale-95"
+                  >
+                    <span>Mở Email Nhận Thư Thực Tế 📬</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                Mã xác minh OTP (6 chữ số)
+              </label>
+              <input
+                type="text"
+                required
+                maxLength={6}
+                placeholder="000000"
+                value={resetCode}
+                onChange={(e) => setResetCode(e.target.value)}
+                className="w-full text-center bg-slate-950 border border-slate-800 text-white rounded-xl py-3 font-mono text-xl tracking-widest focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                id="forgot_input_code"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                Mật khẩu mới
+              </label>
+              <input
+                type="password"
+                required
+                placeholder="Nhập mật khẩu mới từ 6 ký tự..."
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl py-3 px-4 focus:outline-none focus:border-indigo-500 text-sm focus:ring-1 focus:ring-indigo-500"
+                id="forgot_input_newpwd"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl py-3.5 font-semibold text-sm transition shadow-lg cursor-pointer hover:scale-[1.01]"
+            >
+              {isLoading ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : 'Xác nhận Đổi Mật Khẩu'}
+            </button>
+
+            <div className="flex justify-between items-center pt-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setForgotMode('request')}
+                className="text-indigo-400 hover:text-indigo-300 hover:underline transition cursor-pointer"
+              >
+                Gửi lại mã OTP khác
+              </button>
+              <button
+                type="button"
+                onClick={() => setForgotMode('none')}
+                className="text-slate-400 hover:text-white hover:underline transition cursor-pointer"
+              >
+                Quay lại Đăng nhập
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

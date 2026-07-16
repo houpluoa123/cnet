@@ -183,6 +183,15 @@ export default function App() {
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
+  // Security guard for admin/backup tabs to prevent direct navigation via link
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'admin') {
+      if (activeTab === 'admin' || activeTab === 'export_docs' || activeTab === 'firebase') {
+        setActiveTab('timeline');
+      }
+    }
+  }, [activeTab, currentUser]);
+
   // Polling fallback when WebSocket is offline or blocked (e.g. by Cloudflare tunnel challenge)
   useEffect(() => {
     if (isWsConnected || !token) return;
@@ -1161,42 +1170,44 @@ export default function App() {
                 <UserIcon className="w-4 h-4" /> Bảo mật & Cá nhân
               </button>
 
-              <button
-                onClick={() => setActiveTab('export_docs')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition cursor-pointer ${
-                  activeTab === 'export_docs'
-                    ? 'text-emerald-450 bg-emerald-500/10 border border-emerald-500/20'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
-                }`}
-                id="navbar_tab_export_docs"
-              >
-                <FileText className="w-4 h-4" /> Sao lưu Google Docs
-              </button>
-
-              <button
-                onClick={() => setActiveTab('firebase')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition cursor-pointer ${
-                  activeTab === 'firebase'
-                    ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
-                }`}
-                id="navbar_tab_firebase"
-              >
-                <Cloud className="w-4 h-4 text-amber-400" /> Đồng bộ Firebase
-              </button>
-
               {currentUser.role === 'admin' && (
-                <button
-                  onClick={() => setActiveTab('admin')}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition cursor-pointer ${
-                    activeTab === 'admin'
-                      ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
-                  }`}
-                  id="navbar_tab_admin"
-                >
-                  <Activity className="w-4 h-4 text-rose-400" /> Điều hành Admin
-                </button>
+                <>
+                  <button
+                    onClick={() => setActiveTab('export_docs')}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition cursor-pointer ${
+                      activeTab === 'export_docs'
+                        ? 'text-emerald-450 bg-emerald-500/10 border border-emerald-500/20'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
+                    }`}
+                    id="navbar_tab_export_docs"
+                  >
+                    <FileText className="w-4 h-4" /> Sao lưu Google Docs
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('firebase')}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition cursor-pointer ${
+                      activeTab === 'firebase'
+                        ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
+                    }`}
+                    id="navbar_tab_firebase"
+                  >
+                    <Cloud className="w-4 h-4 text-amber-400" /> Đồng bộ Firebase
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('admin')}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition cursor-pointer ${
+                      activeTab === 'admin'
+                        ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
+                    }`}
+                    id="navbar_tab_admin"
+                  >
+                    <Activity className="w-4 h-4 text-rose-400" /> Điều hành Admin
+                  </button>
+                </>
               )}
             </div>
           </div>

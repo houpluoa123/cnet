@@ -10,6 +10,8 @@ export interface User {
   status: string;
   twoFactorEnabled: boolean;
   role?: string;
+  googleId?: string;
+  email?: string;
 }
 
 export interface Friend {

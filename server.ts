@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import AdmZip from 'adm-zip';
+import nodemailer from 'nodemailer';
 
 const app = express();
 const PORT = 3000;
@@ -114,6 +115,16 @@ async function initializeDatabase() {
     try {
       await dbRun(`ALTER TABLE users ADD COLUMN email TEXT`);
       console.log("Database user table migrated: email column added!");
+    } catch (_) {}
+
+    try {
+      await dbRun(`ALTER TABLE users ADD COLUMN password_reset_code TEXT`);
+      console.log("Database user table migrated: password_reset_code column added!");
+    } catch (_) {}
+
+    try {
+      await dbRun(`ALTER TABLE users ADD COLUMN password_reset_expires DATETIME`);
+      console.log("Database user table migrated: password_reset_expires column added!");
     } catch (_) {}
 
     try {
@@ -438,9 +449,9 @@ async function authenticateUserMiddleware(req: any, res: any, next: any) {
 // Register Endpoint
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, password, avatar } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ tài khoản và mật khẩu' });
+    const { username, password, avatar, email, otp } = req.body;
+    if (!username || !password || !email) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ tài khoản, mật khẩu và địa chỉ email' });
     }
     
     const cleanUsername = username.trim();
@@ -448,20 +459,85 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Tên tài khoản phải chứa ít nhất 3 ký tự' });
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail.includes('@')) {
+      return res.status(400).json({ error: 'Địa chỉ email không đúng định dạng' });
+    }
+
     const existingUser = await dbGet('SELECT id FROM users WHERE username = ?', [cleanUsername]);
     if (existingUser) {
       return res.status(400).json({ error: 'Tên tài khoản đã tồn tại trong hệ thống' });
     }
 
-    const pwdHash = hashPassword(password);
-    const defaultAvatar = avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${cleanUsername}`;
-    
+    const existingEmail = await dbGet('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Địa chỉ email này đã được đăng ký bởi tài khoản khác' });
+    }
+
+    // If otp is not provided, send verification code
+    if (!otp) {
+      // Generate random 6-digit OTP code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Store pending registration info
+      pendingRegistrations.set(cleanEmail, {
+        username: cleanUsername,
+        passwordHash: hashPassword(password),
+        avatar: avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${cleanUsername}`,
+        email: cleanEmail,
+        otp: code,
+        expiresAt: Date.now() + 15 * 60 * 1000
+      });
+
+      console.log(`[REGISTER OTP] Generated code for ${cleanEmail}: ${code}`);
+
+      // Send the real email
+      try {
+        await sendOTPEmail(
+          cleanEmail,
+          cleanUsername,
+          code,
+          'Mã xác thực đăng ký tài khoản ZNet',
+          'thiết lập tài khoản mới'
+        );
+      } catch (mailError: any) {
+        console.error("Nodemailer registration send failing:", mailError);
+        return res.status(500).json({
+          error: `Không thể gửi mã xác nhận tới Email của bạn: ${mailError.message || 'Lỗi SMTP'}`
+        });
+      }
+
+      return res.json({
+        requireOTP: true,
+        message: `Hệ thống đã gửi một mã xác minh OTP gồm 6 chữ số tới Email ${cleanEmail}. Vui lòng nhập mã để hoàn tất đăng ký!`
+      });
+    }
+
+    // OTP is provided, verify it
+    const pending = pendingRegistrations.get(cleanEmail);
+    if (!pending) {
+      console.warn(`[REGISTER ERROR] No pending registration found for email key: "${cleanEmail}". Current keys:`, Array.from(pendingRegistrations.keys()));
+      return res.status(400).json({ error: 'Mã xác minh OTP không chính xác, đã hết hạn hoặc không tồn tại' });
+    }
+    if (pending.expiresAt < Date.now()) {
+      console.warn(`[REGISTER ERROR] Pending registration expired for "${cleanEmail}". Expired at: ${pending.expiresAt}, now is: ${Date.now()}`);
+      return res.status(400).json({ error: 'Mã xác minh OTP đã hết hạn' });
+    }
+    if (pending.otp !== otp.trim()) {
+      console.warn(`[REGISTER ERROR] OTP mismatch for "${cleanEmail}". Expected: "${pending.otp}", Received: "${otp.trim()}"`);
+      return res.status(400).json({ error: 'Mã xác minh OTP không chính xác' });
+    }
+
+    // Valid OTP! Now proceed to register
     const result = await dbRun(
-      'INSERT INTO users (username, password_hash, avatar) VALUES (?, ?, ?)',
-      [cleanUsername, pwdHash, defaultAvatar]
+      'INSERT INTO users (username, password_hash, avatar, email) VALUES (?, ?, ?, ?)',
+      [pending.username, pending.passwordHash, pending.avatar, pending.email]
     );
 
-    res.json({ success: true, message: 'Đăng ký tài khoản thành công', userId: result.id });
+    // Clean cache
+    pendingRegistrations.delete(cleanEmail);
+
+    res.json({ success: true, message: 'Đăng ký tài khoản ZNet thành công! Vui lòng tiến hành đăng nhập.', userId: result.id });
   } catch (err) {
     console.error("Registration error:", err);
     res.status(500).json({ error: 'Đăng ký thất bại do sự cố máy chủ' });
@@ -520,17 +596,74 @@ app.post('/api/auth/login', async (req, res) => {
 // Google Sign-In Endpoint
 app.post('/api/auth/google-signin', async (req, res) => {
   try {
-    const { googleId, email, displayName, photoURL } = req.body;
+    const { googleId, email, displayName, photoURL, otp } = req.body;
     if (!googleId || !email) {
       return res.status(400).json({ error: 'Thiếu thông tin Google ID hoặc Email' });
     }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // If OTP is not provided, send confirmation code to the Google Email
+    if (!otp) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+      pendingGoogleLogins.set(cleanEmail, {
+        googleId,
+        email: cleanEmail,
+        displayName: displayName || '',
+        photoURL: photoURL || '',
+        otp: code,
+        expiresAt: Date.now() + 15 * 60 * 1000
+      });
+
+      console.log(`[GOOGLE SIGNIN OTP] Generated code for ${cleanEmail}: ${code}`);
+
+      // Send Email
+      try {
+        await sendOTPEmail(
+          cleanEmail,
+          displayName || cleanEmail.split('@')[0],
+          code,
+          'Mã xác thực đăng nhập Google',
+          'truy cập tài khoản bằng tài khoản Google'
+        );
+      } catch (mailError: any) {
+        console.error("Nodemailer google-signin send failing:", mailError);
+        return res.status(500).json({
+          error: `Không thể gửi mã xác nhận tới Email Google của bạn: ${mailError.message || 'Lỗi SMTP'}`
+        });
+      }
+
+      return res.json({
+        requireOTP: true,
+        message: `Hệ thống đã gửi mã xác thực OTP gồm 6 chữ số tới Email Google (${cleanEmail}) của bạn để hoàn tất đăng nhập!`
+      });
+    }
+
+    // OTP is provided, verify it
+    const pending = pendingGoogleLogins.get(cleanEmail);
+    if (!pending) {
+      console.warn(`[ZNET GOOGLE ERROR] No pending login found for email key: "${cleanEmail}". Current keys:`, Array.from(pendingGoogleLogins.keys()));
+      return res.status(400).json({ error: 'Mã xác minh OTP không chính xác hoặc đã hết hạn' });
+    }
+    if (pending.expiresAt < Date.now()) {
+      console.warn(`[ZNET GOOGLE ERROR] Pending login expired for "${cleanEmail}". Expired at: ${pending.expiresAt}, now is: ${Date.now()}`);
+      return res.status(400).json({ error: 'Mã xác minh OTP đã hết hạn' });
+    }
+    if (pending.otp !== otp.trim()) {
+      console.warn(`[ZNET GOOGLE ERROR] OTP mismatch for "${cleanEmail}". Expected: "${pending.otp}", Received: "${otp.trim()}"`);
+      return res.status(400).json({ error: 'Mã xác minh OTP không chính xác' });
+    }
+
+    // OTP verified successfully! Clear cache
+    pendingGoogleLogins.delete(cleanEmail);
 
     // 1. Check if user already exists by googleId
     let user = await dbGet('SELECT * FROM users WHERE google_id = ?', [googleId]);
 
     // 2. If not found by googleId, check by email
     if (!user) {
-      user = await dbGet('SELECT * FROM users WHERE email = ?', [email]);
+      user = await dbGet('SELECT * FROM users WHERE email = ?', [cleanEmail]);
       if (user) {
         // Link googleId to this existing account
         await dbRun('UPDATE users SET google_id = ? WHERE id = ?', [googleId, user.id]);
@@ -542,7 +675,7 @@ app.post('/api/auth/google-signin', async (req, res) => {
     // 3. If still not found, create a new user
     if (!user) {
       // Create a unique username
-      let baseUsername = (displayName || email.split('@')[0]).trim().replace(/\s+/g, '_');
+      let baseUsername = (pending.displayName || cleanEmail.split('@')[0]).trim().replace(/\s+/g, '_');
       // Strip special characters for username compatibility
       baseUsername = baseUsername.replace(/[^a-zA-Z0-9_]/g, '');
       if (baseUsername.length < 3) baseUsername = "user_" + Math.floor(Math.random() * 1000);
@@ -560,11 +693,11 @@ app.post('/api/auth/google-signin', async (req, res) => {
       // Generate random secure password hash
       const randomPassword = crypto.randomBytes(16).toString('hex');
       const pwdHash = hashPassword(randomPassword);
-      const avatar = photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${finalUsername}`;
+      const avatar = pending.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${finalUsername}`;
 
       const result = await dbRun(
         'INSERT INTO users (username, password_hash, google_id, email, avatar, status) VALUES (?, ?, ?, ?, ?, ?)',
-        [finalUsername, pwdHash, googleId, email, avatar, 'Tôi tham gia ZNet bằng tài khoản Google!']
+        [finalUsername, pwdHash, googleId, cleanEmail, avatar, 'Tôi tham gia ZNet bằng tài khoản Google!']
       );
 
       user = await dbGet('SELECT * FROM users WHERE id = ?', [result.id]);
@@ -582,7 +715,9 @@ app.post('/api/auth/google-signin', async (req, res) => {
         avatar: user.avatar,
         status: user.status,
         twoFactorEnabled: user.two_factor_enabled === 1,
-        role: user.role || 'user'
+        role: user.role || 'user',
+        googleId: user.google_id || null,
+        email: user.email || null
       }
     });
   } catch (err) {
@@ -591,10 +726,283 @@ app.post('/api/auth/google-signin', async (req, res) => {
   }
 });
 
+// Google Link Account Endpoint
+app.post('/api/auth/google-link', authenticateUserMiddleware, async (req: any, res) => {
+  try {
+    const { googleId, email } = req.body;
+    if (!googleId || !email) {
+      return res.status(400).json({ error: 'Thiếu thông tin Google ID hoặc Email' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Check if this googleId is already linked to ANOTHER user
+    const existing = await dbGet('SELECT id, username FROM users WHERE google_id = ? AND id != ?', [googleId, req.user.id]);
+    if (existing) {
+      return res.status(400).json({ error: `Tài khoản Google này đã được liên kết với người dùng khác (${existing.username})` });
+    }
+
+    // Update the current user
+    await dbRun('UPDATE users SET google_id = ?, email = ? WHERE id = ?', [googleId, cleanEmail, req.user.id]);
+    res.json({
+      success: true,
+      message: 'Liên kết tài khoản Google thành công!',
+      googleId,
+      email
+    });
+  } catch (err) {
+    console.error("Google link error:", err);
+    res.status(505).json({ error: 'Không thể liên kết tài khoản Google do lỗi máy chủ' });
+  }
+});
+
+// In-memory memory caches for real Email OTP verifications
+interface PendingRegistration {
+  username: string;
+  passwordHash: string;
+  avatar: string;
+  email: string;
+  otp: string;
+  expiresAt: number;
+}
+
+interface PendingGoogleLogin {
+  googleId: string;
+  email: string;
+  displayName: string;
+  photoURL: string;
+  otp: string;
+  expiresAt: number;
+}
+
+const pendingRegistrations = new Map<string, PendingRegistration>();
+const pendingGoogleLogins = new Map<string, PendingGoogleLogin>();
+
+// Helper to send real emails via Nodemailer with pre-configured secure Gmail defaults
+async function sendOTPEmail(toEmail: string, username: string, otp: string, subject: string, actionText: string): Promise<boolean> {
+  const host = 'smtp.gmail.com';
+  const port = '465';
+  const user = 'opaas315@gmail.com';
+  const pass = 'nmfpwjuvxcplyyxq';
+  const from = '"ZNet Security" <opaas315@gmail.com>';
+
+  const transporter = nodemailer.createTransport({
+    host: host.trim(),
+    port: parseInt(port.trim(), 10),
+    secure: true, // SSL for 465
+    auth: {
+      user: user.trim(),
+      pass: pass.trim(),
+    },
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+
+  const mailOptions = {
+    from,
+    to: toEmail,
+    subject: `[ZNet] ${subject}: ${otp}`,
+    html: `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 30px; background-color: #0f172a; border-radius: 16px; color: #f8fafc; border: 1px solid #1e293b; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);">
+        <div style="text-align: center; margin-bottom: 25px;">
+          <h2 style="color: #6366f1; font-size: 28px; font-weight: 800; margin: 0; letter-spacing: 1px; text-transform: uppercase;">ZNet Security</h2>
+          <p style="color: #94a3b8; font-size: 13px; margin: 5px 0 0 0;">Cổng Xác Thực An Toàn ZNet</p>
+        </div>
+        
+        <div style="background-color: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 25px;">
+          <p style="margin: 0 0 15px 0; font-size: 14px; color: #cbd5e1; line-height: 1.6;">
+            Xin chào <strong>${username}</strong>,
+          </p>
+          <p style="margin: 0 0 20px 0; font-size: 14px; color: #cbd5e1; line-height: 1.6;">
+            Chúng tôi nhận được yêu cầu ${actionText} cho tài khoản ZNet liên kết với Email này. Dưới đây là mã xác minh OTP bảo mật của bạn:
+          </p>
+          
+          <div style="text-align: center; margin: 25px 0; padding: 15px; background-color: #020617; border-radius: 10px; border: 1.5px dashed #4f46e5;">
+            <span style="font-family: 'Courier New', Courier, monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #34d399; display: inline-block;">${otp}</span>
+          </div>
+          
+          <p style="margin: 0; font-size: 12px; color: #cbd5e1; line-height: 1.5; background-color: rgba(245, 158, 11, 0.1); padding: 10px; border-radius: 6px; border-left: 3px solid #f59e0b;">
+            ⚠️ <strong>Lưu ý bảo mật:</strong> Mã xác thực này có hiệu lực trong vòng <strong>15 phút</strong>. Tuyệt đối không chia sẻ mã này với bất kỳ ai để bảo vệ an toàn tài khoản.
+          </p>
+        </div>
+        
+        <div style="text-align: center; border-top: 1px solid #1e293b; padding-top: 20px; font-size: 11px; color: #64748b;">
+          <p style="margin: 0 0 5px 0;">Yêu cầu này được gửi từ cổng bảo mật ZNet Applet.</p>
+          <p style="margin: 0;">&copy; 2026 ZNet Inc. All rights reserved.</p>
+        </div>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+  return true;
+}
+
+// Helper to send real emails via Nodemailer
+async function sendResetEmailViaNodemailer(toEmail: string, username: string, resetCode: string): Promise<{ success: boolean; etherealUrl?: string }> {
+  const host = 'smtp.gmail.com';
+  const port = '465';
+  const user = 'opaas315@gmail.com';
+  const pass = 'nmfpwjuvxcplyyxq';
+  const from = '"ZNet Security" <opaas315@gmail.com>';
+
+  const transporter = nodemailer.createTransport({
+    host: host.trim(),
+    port: parseInt(port.trim(), 10),
+    secure: true, // SSL for 465
+    auth: {
+      user: user.trim(),
+      pass: pass.trim(),
+    },
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+
+  const mailOptions = {
+    from,
+    to: toEmail,
+    subject: `[ZNet] Mã xác thực khôi phục mật khẩu tài khoản: ${resetCode}`,
+    html: `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; padding: 30px; background-color: #0f172a; border-radius: 16px; color: #f8fafc; border: 1px solid #1e293b; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);">
+        <div style="text-align: center; margin-bottom: 25px;">
+          <h2 style="color: #6366f1; font-size: 28px; font-weight: 800; margin: 0; letter-spacing: 1px; text-transform: uppercase;">ZNet Security</h2>
+          <p style="color: #94a3b8; font-size: 13px; margin: 5px 0 0 0;">Hệ thống Khôi phục Mật khẩu Tài khoản</p>
+        </div>
+        
+        <div style="background-color: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 25px;">
+          <p style="margin: 0 0 15px 0; font-size: 14px; color: #cbd5e1; line-height: 1.6;">
+            Xin chào <strong>${username}</strong>,
+          </p>
+          <p style="margin: 0 0 20px 0; font-size: 14px; color: #cbd5e1; line-height: 1.6;">
+            Chúng tôi nhận được yêu cầu khôi phục mật khẩu cho tài khoản ZNet của bạn. Dưới đây là mã xác minh OTP của bạn:
+          </p>
+          
+          <div style="text-align: center; margin: 25px 0; padding: 15px; background-color: #020617; border-radius: 10px; border: 1.5px dashed #4f46e5;">
+            <span style="font-family: 'Courier New', Courier, monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #34d399; display: inline-block;">${resetCode}</span>
+          </div>
+          
+          <p style="margin: 0; font-size: 12px; color: #cbd5e1; line-height: 1.5; background-color: rgba(245, 158, 11, 0.1); padding: 10px; border-radius: 6px; border-left: 3px solid #f59e0b;">
+            ⚠️ <strong>Lưu ý bảo mật:</strong> Mã xác thực này có hiệu lực trong vòng <strong>15 phút</strong>. Tuyệt đối không chia sẻ mã này với bất kỳ ai để bảo vệ an toàn tài khoản.
+          </p>
+        </div>
+        
+        <div style="text-align: center; border-top: 1px solid #1e293b; padding-top: 20px; font-size: 11px; color: #64748b;">
+          <p style="margin: 0 0 5px 0;">Yêu cầu này được gửi từ cổng bảo mật ZNet Applet.</p>
+          <p style="margin: 0;">&copy; 2026 ZNet Inc. All rights reserved.</p>
+        </div>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+  return { success: true };
+}
+
+// Forgot Password Endpoint
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { usernameOrEmail } = req.body;
+    if (!usernameOrEmail) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp tên tài khoản hoặc email của bạn' });
+    }
+
+    // Lookup user by username or email
+    const user = await dbGet('SELECT id, username, email FROM users WHERE username = ? OR email = ?', [usernameOrEmail, usernameOrEmail]);
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy tài khoản người dùng tương ứng' });
+    }
+
+    if (!user.email) {
+      return res.status(400).json({
+        error: 'Tài khoản của bạn chưa có địa chỉ email liên kết, do đó không thể gửi mã xác nhận thực tế. Vui lòng đăng ký tài khoản mới kèm email hoặc liên kết tài khoản với Google trước.'
+      });
+    }
+
+    // Generate random 6-digit OTP code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    // Expires in 15 minutes
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    // Send the real email
+    let etherealUrl: string | undefined;
+    try {
+      const mailResult = await sendResetEmailViaNodemailer(user.email, user.username, resetCode);
+      etherealUrl = mailResult.etherealUrl;
+    } catch (mailError: any) {
+      console.error("Nodemailer sending failed:", mailError);
+      return res.status(500).json({
+        error: `Không thể gửi Email thực tế: ${mailError.message || 'Lỗi kết nối SMTP'}`
+      });
+    }
+
+    await dbRun(
+      'UPDATE users SET password_reset_code = ?, password_reset_expires = ? WHERE id = ?',
+      [resetCode, expiresAt, user.id]
+    );
+
+    console.log(`[RESET PASSWORD] Code sent via email to ${user.email} for user ${user.username}: ${resetCode}`);
+
+    res.json({
+      success: true,
+      message: `Mã xác minh phục hồi mật khẩu đã được gửi tới hòm thư của bạn (${user.email})! Hãy kiểm tra hòm thư chính và thư rác (Spam).`,
+      username: user.username,
+      code: resetCode,
+      etherealUrl
+    });
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({ error: 'Lỗi xử lý yêu cầu quên mật khẩu' });
+  }
+});
+
+// Reset Password Endpoint
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { usernameOrEmail, code, newPassword } = req.body;
+    if (!usernameOrEmail || !code || !newPassword) {
+      return res.status(400).json({ error: 'Vui lòng cung cấp đầy đủ thông tin đặt lại mật khẩu' });
+    }
+
+    const user = await dbGet('SELECT id, password_reset_code, password_reset_expires FROM users WHERE username = ? OR email = ?', [usernameOrEmail, usernameOrEmail]);
+    if (!user) {
+      return res.status(404).json({ error: 'Không tìm thấy tài khoản người dùng tương ứng' });
+    }
+
+    if (!user.password_reset_code || user.password_reset_code !== code.trim()) {
+      return res.status(400).json({ error: 'Mã xác minh OTP không chính xác' });
+    }
+
+    // Check expiration
+    if (new Date(user.password_reset_expires) < new Date()) {
+      return res.status(400).json({ error: 'Mã xác minh OTP của bạn đã hết hạn' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'Mật khẩu mới phải dài tối thiểu 6 ký tự' });
+    }
+
+    const hashedNew = hashPassword(newPassword);
+    await dbRun(
+      'UPDATE users SET password_hash = ?, password_reset_code = NULL, password_reset_expires = NULL WHERE id = ?',
+      [hashedNew, user.id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Đặt lại mật khẩu mới thành công! Bạn hiện có thể đăng nhập bằng mật khẩu mới này.'
+    });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ error: 'Không thể đặt lại mật khẩu do lỗi máy chủ' });
+  }
+});
+
 // Get self infomation
 app.get('/api/auth/me', authenticateUserMiddleware, async (req: any, res) => {
   try {
-    const user = await dbGet('SELECT id, username, avatar, status, two_factor_enabled, role FROM users WHERE id = ?', [req.user.id]);
+    const user = await dbGet('SELECT id, username, avatar, status, two_factor_enabled, role, google_id, email FROM users WHERE id = ?', [req.user.id]);
     if (!user) {
       return res.status(404).json({ error: 'Không tìm thấy người dùng' });
     }
@@ -604,7 +1012,9 @@ app.get('/api/auth/me', authenticateUserMiddleware, async (req: any, res) => {
       avatar: user.avatar,
       status: user.status,
       twoFactorEnabled: user.two_factor_enabled === 1,
-      role: user.role || 'user'
+      role: user.role || 'user',
+      googleId: user.google_id || null,
+      email: user.email || null
     });
   } catch (error) {
     console.error("Session fetch error:", error);
@@ -1463,7 +1873,7 @@ app.post('/api/groups/:groupId/leave', authenticateUserMiddleware, async (req: a
 });
 
 // Firebase Backup Sync API endpoint
-app.get('/api/firebase/sync-data', authenticateUserMiddleware, async (req: any, res) => {
+app.get('/api/firebase/sync-data', authenticateAdminMiddleware, async (req: any, res) => {
   try {
     const users = await dbAll('SELECT id, username, avatar, status FROM users');
     const feeds = await dbAll(`
@@ -1765,7 +2175,7 @@ app.delete('/api/feeds/:feedId', authenticateUserMiddleware, async (req: any, re
 });
 
 // Google Docs: Export all codebase source files to a Google Document
-app.post('/api/export/google-docs', authenticateUserMiddleware, async (req: any, res) => {
+app.post('/api/export/google-docs', authenticateAdminMiddleware, async (req: any, res) => {
   try {
     const { googleAccessToken } = req.body;
     if (!googleAccessToken) {
@@ -1878,7 +2288,7 @@ DANH SÁCH TOÀN BỘ MÃ NGUỒN CÁC FILE CHÍNH CỦA DỰ ÁN ZNET:
 });
 
 // Export all codebase source files as a downloadable ZIP file
-app.get('/api/export/zip', authenticateUserMiddleware, (req: any, res) => {
+app.get('/api/export/zip', authenticateAdminMiddleware, (req: any, res) => {
   try {
     const zip = new AdmZip();
     const rootFiles = [
@@ -1930,7 +2340,7 @@ app.get('/api/export/znet-design', (req, res) => {
 });
 
 // Google Drive: Export packed project ZIP file directly to the user's Google Drive
-app.post('/api/export/google-drive', authenticateUserMiddleware, async (req: any, res) => {
+app.post('/api/export/google-drive', authenticateAdminMiddleware, async (req: any, res) => {
   try {
     const { googleAccessToken } = req.body;
     if (!googleAccessToken) {
