@@ -107,6 +107,16 @@ async function initializeDatabase() {
     }
 
     try {
+      await dbRun(`ALTER TABLE users ADD COLUMN google_id TEXT`);
+      console.log("Database user table migrated: google_id column added!");
+    } catch (_) {}
+
+    try {
+      await dbRun(`ALTER TABLE users ADD COLUMN email TEXT`);
+      console.log("Database user table migrated: email column added!");
+    } catch (_) {}
+
+    try {
       await dbRun(`ALTER TABLE users ADD COLUMN auto_delete_pms INTEGER DEFAULT 0`);
       console.log("Database user table migrated: auto_delete_pms column added!");
     } catch (_) {}
@@ -504,6 +514,80 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) {
     console.error("Login endpoint exception:", err);
     res.status(500).json({ error: 'Đăng nhập thất bại do kết nối máy chủ' });
+  }
+});
+
+// Google Sign-In Endpoint
+app.post('/api/auth/google-signin', async (req, res) => {
+  try {
+    const { googleId, email, displayName, photoURL } = req.body;
+    if (!googleId || !email) {
+      return res.status(400).json({ error: 'Thiếu thông tin Google ID hoặc Email' });
+    }
+
+    // 1. Check if user already exists by googleId
+    let user = await dbGet('SELECT * FROM users WHERE google_id = ?', [googleId]);
+
+    // 2. If not found by googleId, check by email
+    if (!user) {
+      user = await dbGet('SELECT * FROM users WHERE email = ?', [email]);
+      if (user) {
+        // Link googleId to this existing account
+        await dbRun('UPDATE users SET google_id = ? WHERE id = ?', [googleId, user.id]);
+        user.google_id = googleId;
+        console.log(`[ZNET GOOGLE] Linked Google Account for existing user: ${user.username}`);
+      }
+    }
+
+    // 3. If still not found, create a new user
+    if (!user) {
+      // Create a unique username
+      let baseUsername = (displayName || email.split('@')[0]).trim().replace(/\s+/g, '_');
+      // Strip special characters for username compatibility
+      baseUsername = baseUsername.replace(/[^a-zA-Z0-9_]/g, '');
+      if (baseUsername.length < 3) baseUsername = "user_" + Math.floor(Math.random() * 1000);
+
+      let finalUsername = baseUsername;
+      let suffix = 1;
+      // Loop to ensure username is unique
+      while (true) {
+        const check = await dbGet('SELECT id FROM users WHERE username = ?', [finalUsername]);
+        if (!check) break;
+        finalUsername = `${baseUsername}_${suffix}`;
+        suffix++;
+      }
+
+      // Generate random secure password hash
+      const randomPassword = crypto.randomBytes(16).toString('hex');
+      const pwdHash = hashPassword(randomPassword);
+      const avatar = photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${finalUsername}`;
+
+      const result = await dbRun(
+        'INSERT INTO users (username, password_hash, google_id, email, avatar, status) VALUES (?, ?, ?, ?, ?, ?)',
+        [finalUsername, pwdHash, googleId, email, avatar, 'Tôi tham gia ZNet bằng tài khoản Google!']
+      );
+
+      user = await dbGet('SELECT * FROM users WHERE id = ?', [result.id]);
+      console.log(`[ZNET GOOGLE] Created new Google user: ${finalUsername}`);
+    }
+
+    // 4. Issue custom ZNet JWT token
+    const token = signToken({ id: user.id, username: user.username });
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        avatar: user.avatar,
+        status: user.status,
+        twoFactorEnabled: user.two_factor_enabled === 1,
+        role: user.role || 'user'
+      }
+    });
+  } catch (err) {
+    console.error("Google Sign-In endpoint error:", err);
+    res.status(500).json({ error: 'Đăng nhập Google thất bại do lỗi hệ thống máy chủ' });
   }
 });
 
@@ -1375,6 +1459,42 @@ app.post('/api/groups/:groupId/leave', authenticateUserMiddleware, async (req: a
   } catch (err) {
     console.error("Leave group error:", err);
     res.status(500).json({ error: 'Lỗi ngoài ý muốn khi rời nhóm' });
+  }
+});
+
+// Firebase Backup Sync API endpoint
+app.get('/api/firebase/sync-data', authenticateUserMiddleware, async (req: any, res) => {
+  try {
+    const users = await dbAll('SELECT id, username, avatar, status FROM users');
+    const feeds = await dbAll(`
+      SELECT f.id, f.content, f.likes_count as likesCount, f.created_at as createdAt,
+             u.username, u.avatar, f.user_id as userId
+      FROM feeds f
+      JOIN users u ON f.user_id = u.id
+    `);
+    const messages = await dbAll('SELECT id, sender_id as senderId, receiver_id as receiverId, message_text as text, created_at as createdAt, is_recalled as isRecalled FROM messages');
+    const groups = await dbAll(`
+      SELECT id, name, created_at as createdAt, creator_id as creatorId,
+             (SELECT COUNT(*) FROM group_members WHERE group_id = chat_groups.id) as membersCount
+      FROM chat_groups
+    `);
+    const groupMessages = await dbAll(`
+      SELECT gm.id, gm.group_id as groupId, gm.sender_id as senderId, gm.message_text as text, gm.created_at as createdAt,
+             u.username as senderName, u.avatar as senderAvatar, gm.is_recalled as isRecalled
+      FROM group_messages gm
+      JOIN users u ON gm.sender_id = u.id
+    `);
+
+    res.json({
+      users,
+      feeds,
+      messages,
+      groups,
+      groupMessages
+    });
+  } catch (err) {
+    console.error("Firebase sync-data endpoint failed:", err);
+    res.status(500).json({ error: 'Không thể lấy dữ liệu để đồng bộ hóa lên Firebase Cloud' });
   }
 });
 

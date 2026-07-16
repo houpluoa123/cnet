@@ -4,8 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import { Shield, Key, UserPlus, LogIn, ChevronRight, Check, AlertCircle, Zap, Terminal, Copy } from 'lucide-react';
+import { Shield, Key, UserPlus, LogIn, ChevronRight, Check, AlertCircle, Zap, Terminal, Copy, Chrome } from 'lucide-react';
 import { User } from '../types';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider } from '../lib/firebase';
 
 interface AuthFormProps {
   onAuthSuccess: (token: string, user: User) => void;
@@ -207,6 +209,70 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     setOtp('');
   };
 
+  const handleGoogleSignIn = async () => {
+    if (!auth) {
+      setErrorMsg('Hệ thống Firebase Auth chưa được khởi tạo thành công.');
+      return;
+    }
+    setErrorMsg('');
+    setSuccessMsg('');
+    setCfDiagnostic(null);
+    setIsLoading(true);
+
+    try {
+      console.log("[ZNET GOOGLE] Triggering Firebase Google Popup...");
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      
+      if (!user || !user.email) {
+        throw new Error('Đăng nhập Google thành công nhưng không lấy được thông tin Email liên kết.');
+      }
+
+      console.log("[ZNET GOOGLE] Firebase popup success, user email:", user.email);
+
+      // Exchange with backend
+      const res = await fetch('/api/auth/google-signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          googleId: user.uid,
+          email: user.email,
+          displayName: user.displayName || '',
+          photoURL: user.photoURL || ''
+        })
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const bodyText = await res.text();
+        diagnoseHtmlResponse(bodyText, res.status);
+        throw new Error('Đường truyền phản hồi từ máy chủ không hợp lệ (Không phải JSON). Hãy xem chẩn đoán bên dưới!');
+      }
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Xác thực Google trên hệ thống ZNet thất bại.');
+      }
+
+      if (data.success && data.token && data.user) {
+        onAuthSuccess(data.token, data.user);
+      }
+    } catch (err: any) {
+      console.error("[ZNET GOOGLE] Google sign-in failed:", err);
+      let msg = err.message || 'Đăng nhập Google gặp lỗi bất ngờ. Vui lòng thử lại!';
+      if (err.code === 'auth/popup-closed-by-user') {
+        msg = 'Cửa sổ đăng nhập Google đã bị đóng trước khi hoàn tất xác thực.';
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        msg = 'Tiến trình đăng nhập bằng Google đã bị hủy bỏ.';
+      } else if (err.code === 'auth/popup-blocked') {
+        msg = 'Trình duyệt của bạn đã chặn cửa sổ Popup Google. Vui lòng cho phép hiện Popups cho trang web này và tải lại trang.';
+      }
+      setErrorMsg(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-md mx-auto" id="auth_container">
       <div className="relative bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl overflow-hidden">
@@ -389,6 +455,27 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
             )}
           </button>
         </form>
+
+        {!require2FA && (
+          <>
+            <div className="flex items-center my-4 relative z-10">
+              <div className="flex-1 border-t border-slate-800/60"></div>
+              <span className="px-3 text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Hoặc sử dụng tài khoản</span>
+              <div className="flex-1 border-t border-slate-800/60"></div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-2.5 bg-slate-950/85 hover:bg-slate-950 border border-slate-800/80 hover:border-slate-700 disabled:opacity-50 text-slate-200 rounded-xl py-3.5 font-bold text-xs transition cursor-pointer hover:scale-[1.01] active:scale-95 relative z-10"
+              id="google_signin_btn"
+            >
+              <Chrome className="w-4 h-4 text-rose-500 animate-pulse" />
+              <span>{isLogin ? 'Đăng nhập bằng Google' : 'Đăng ký bằng Google'}</span>
+            </button>
+          </>
+        )}
 
         <div className="mt-6 pt-5 border-t border-slate-800/80 text-center relative z-10" id="auth_mode_toggle_container">
           <button

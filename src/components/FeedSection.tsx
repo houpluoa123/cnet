@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, MessageSquareHeart, Heart, Send, Users, Activity, ShieldAlert, MessageSquare, Share2, Trash2 } from 'lucide-react';
 import { FeedPost, User, Comment } from '../types';
+import { syncFeedPostToFirebase } from '../lib/firebase';
 
 interface FeedSectionProps {
   token: string;
@@ -65,6 +66,13 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
       // Append locally to head of list
       setPosts(prev => [data, ...prev]);
       setInputText('');
+
+      // Background real-time Firebase sync
+      try {
+        syncFeedPostToFirebase(data);
+      } catch (fbErr) {
+        console.warn("Real-time Firebase sync failed for feed post:", fbErr);
+      }
     } catch (err: any) {
       console.error("Publish feed error:", err);
       setErrorMsg(err.message || 'Đăng trạng thái thất bại.');

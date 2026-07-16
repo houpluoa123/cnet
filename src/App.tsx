@@ -18,7 +18,8 @@ import {
   Lock,
   Globe,
   FileText,
-  Pin
+  Pin,
+  Cloud
 } from 'lucide-react';
 import AuthForm from './components/AuthForm';
 import FriendsList from './components/FriendsList';
@@ -29,6 +30,8 @@ import AdminConsole from './components/AdminConsole';
 import UserProfileModal from './components/UserProfileModal';
 import GroupChatWindow from './components/GroupChatWindow';
 import ExportDocsSection from './components/ExportDocsSection';
+import FirebaseSection from './components/FirebaseSection';
+import { syncMessageToFirebase, syncGroupMessageToFirebase } from './lib/firebase';
 import { User, Friend, Message, ChatGroup, GroupMessage } from './types';
 
 export default function App() {
@@ -37,7 +40,7 @@ export default function App() {
   const [isPreAuthing, setIsPreAuthing] = useState<boolean>(true);
   
   // Custom navigation
-  const [activeTab, setActiveTab] = useState<'chats' | 'friends' | 'timeline' | 'profile' | 'admin' | 'export_docs'>('timeline');
+  const [activeTab, setActiveTab] = useState<'chats' | 'friends' | 'timeline' | 'profile' | 'admin' | 'export_docs' | 'firebase'>('timeline');
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
   const [activeBroadcast, setActiveBroadcast] = useState<string | null>(null);
 
@@ -254,6 +257,17 @@ export default function App() {
                   createdAt
                 });
 
+                // Real-time Firestore Sync
+                try {
+                  syncMessageToFirebase({
+                    id,
+                    senderId,
+                    receiverId: currentUserRef.current?.id || 0,
+                    text,
+                    createdAt
+                  });
+                } catch (_) {}
+
                 // Trigger gorgeous popup alert overlay if user is browsing other sections
                 if (activeTabRef.current !== 'chats' || !selectedFriendRef.current || selectedFriendRef.current.id !== senderId || chatModeRef.current !== 'direct') {
                   fetchNotificationDetailsAndAlert('direct', senderId, text);
@@ -297,6 +311,18 @@ export default function App() {
                   senderAvatar
                 });
 
+                // Real-time Firestore sync
+                try {
+                  syncGroupMessageToFirebase(groupId, {
+                    id,
+                    senderId,
+                    text,
+                    createdAt,
+                    senderName,
+                    senderAvatar
+                  });
+                } catch (_) {}
+
                 // Trigger gorgeous popup alert notice for incoming secure group messages
                 if (activeTabRef.current !== 'chats' || !selectedGroupRef.current || selectedGroupRef.current.id !== groupId || chatModeRef.current !== 'group') {
                   setIncomingNotification({
@@ -319,6 +345,18 @@ export default function App() {
                   text,
                   createdAt
                 });
+
+                // Real-time Firestore sync
+                try {
+                  syncMessageToFirebase({
+                    id,
+                    senderId: currentUserRef.current?.id || 0,
+                    receiverId,
+                    text,
+                    createdAt
+                  });
+                } catch (_) {}
+
                 break;
               }
 
@@ -764,6 +802,11 @@ export default function App() {
               [selectedFriend.id]: [...existing, newMsg]
             };
           });
+
+          // Firestore sync
+          try {
+            syncMessageToFirebase(newMsg);
+          } catch (_) {}
         } else {
           console.error("HTTP fallback message send failed.");
         }
@@ -807,6 +850,11 @@ export default function App() {
               [selectedGroup.id]: [...existing, newMsg]
             };
           });
+
+          // Firestore Sync
+          try {
+            syncGroupMessageToFirebase(selectedGroup.id, newMsg);
+          } catch (_) {}
         } else {
           console.error("HTTP fallback group message send failed.");
         }
@@ -1123,6 +1171,18 @@ export default function App() {
                 id="navbar_tab_export_docs"
               >
                 <FileText className="w-4 h-4" /> Sao lưu Google Docs
+              </button>
+
+              <button
+                onClick={() => setActiveTab('firebase')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-medium transition cursor-pointer ${
+                  activeTab === 'firebase'
+                    ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent'
+                }`}
+                id="navbar_tab_firebase"
+              >
+                <Cloud className="w-4 h-4 text-amber-400" /> Đồng bộ Firebase
               </button>
 
               {currentUser.role === 'admin' && (
@@ -1456,6 +1516,10 @@ export default function App() {
 
           {activeTab === 'export_docs' && (
             <ExportDocsSection token={token!} user={currentUser} />
+          )}
+
+          {activeTab === 'firebase' && (
+            <FirebaseSection token={token!} />
           )}
 
         </div>
