@@ -24,6 +24,83 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [successMsg, setSuccessMsg] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
 
+  // Cloudflare and system troubleshooting diagnostic
+  const [cfDiagnostic, setCfDiagnostic] = useState<{
+    type: 'security_challenge' | 'gateway_error' | 'not_found' | 'other';
+    title: string;
+    details: string;
+    steps: string[];
+    htmlExcerpt?: string;
+    status?: number;
+  } | null>(null);
+
+  const diagnoseHtmlResponse = (htmlText: string, status: number) => {
+    const textLower = htmlText.toLowerCase();
+    
+    if (textLower.includes('502 bad gateway') || status === 502) {
+      setCfDiagnostic({
+        type: 'gateway_error',
+        title: 'Lỗi 502 Bad Gateway (Lỗi Cổng Kết Nối)',
+        details: 'Cloudflare Tunnel hoặc Proxy của bạn không thể chuyển tiếp yêu cầu đến cổng 3000. Điều này xảy ra khi tiến trình máy chủ Node.js chưa chạy hoặc đã bị sập.',
+        steps: [
+          'Kiểm tra xem Express server đã khởi chạy chưa: Chạy lệnh `pm2 status` hoặc `lsof -i :3000` trên VPS.',
+          'Đảm bảo Cloudflare Tunnel trỏ đúng vào địa chỉ `http://localhost:3000` (dùng giao thức HTTP, không chọn HTTPS).',
+          'Xem nhật ký lỗi của máy chủ bằng lệnh `pm2 logs` hoặc đọc file `znet_runtime.log`.'
+        ],
+        htmlExcerpt: htmlText.slice(0, 300),
+        status
+      });
+    } else if (textLower.includes('521') || textLower.includes('web server is down') || status === 521) {
+      setCfDiagnostic({
+        type: 'gateway_error',
+        title: 'Lỗi 521 Web Server Is Down (Máy Chủ Ngoại Tuyến)',
+        details: 'Máy chủ backend của bạn không phản hồi kết nối từ Cloudflare Tunnel. Tiến trình ZNet có thể đã bị sập hoàn toàn.',
+        steps: [
+          'Chạy lệnh `npm run start` hoặc khởi động lại PM2: `pm2 restart znet`.',
+          'Kiểm tra firewall (UFW/iptables) trên VPS của bạn xem có đang chặn các kết nối nội bộ không.'
+        ],
+        htmlExcerpt: htmlText.slice(0, 300),
+        status
+      });
+    } else if (
+      textLower.includes('cloudflare') || 
+      textLower.includes('cf-challenge') || 
+      textLower.includes('turnstile') || 
+      textLower.includes('captcha') || 
+      textLower.includes('just a moment') ||
+      textLower.includes('security check') ||
+      textLower.includes('ray id') ||
+      status === 403
+    ) {
+      setCfDiagnostic({
+        type: 'security_challenge',
+        title: 'Cloudflare Security Challenge / WAF Blocked 🛡️',
+        details: 'Tính năng bảo mật của Cloudflare (Web Application Firewall - WAF) hoặc Bot Fight Mode đã chặn yêu cầu API tự động từ trình duyệt và trả về trang xác thực HTML (CAPTCHA / Challenge).',
+        steps: [
+          'Vào Cloudflare Dashboard -> Security -> WAF -> Custom Rules, tạo quy tắc miễn trừ (Bypass rule): Nếu URI Path chứa `/api/` thì chọn Action là "Bypass" (Bỏ qua bảo mật cho API).',
+          'Tắt tạm thời "Bot Fight Mode" hoặc "Under Attack Mode" trong Security -> Settings nếu đang bật.',
+          'Nếu sử dụng Cloudflare Access / Zero Trust, hãy đảm bảo bạn đã cấu hình chính sách cho phép bypass các đường dẫn API public này.'
+        ],
+        htmlExcerpt: htmlText.slice(0, 300),
+        status
+      });
+    } else {
+      setCfDiagnostic({
+        type: 'other',
+        title: `Nhận phản hồi dạng HTML thay vì JSON (Mã trạng thái: ${status})`,
+        details: 'Máy chủ phản hồi bằng trang HTML. Lỗi này 99% xảy ra do đường truyền yêu cầu API bị chuyển hướng (Redirect HTTP sang HTTPS hoặc chuyển non-WWW sang WWW), khiến trình duyệt chuyển yêu cầu POST thành GET và trả về trang chủ HTML, hoặc do VPS của bạn chưa chạy tệp server.ts đã biên dịch mới nhất.',
+        steps: [
+          'Chắc chắn rằng bạn đang sử dụng địa chỉ HTTPS chuẩn khi truy cập (ví dụ: https://znet.yourdomain.com chứ không dùng giao thức http:// ẩn).',
+          'Kiểm tra cấu hình Page Rules / Redirects trong Cloudflare xem có quy tắc nào đang tự động chuyển hướng đường dẫn /api/* hoặc biến đổi yêu cầu không.',
+          'Đảm bảo rằng bạn đã chạy tập lệnh vá lỗi mới nhất và biên dịch dự án thành công (npm run build).',
+          'Khởi động lại tiến trình server bằng tập lệnh znet-patcher.sh để áp dụng các thay đổi hoàn hảo.'
+        ],
+        htmlExcerpt: htmlText.slice(0, 300),
+        status
+      });
+    }
+  };
+
   const avatarOptions = [
     'https://api.dicebear.com/7.x/pixel-art/svg?seed=Felix',
     'https://api.dicebear.com/7.x/pixel-art/svg?seed=Aneka',
@@ -37,6 +114,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
+    setCfDiagnostic(null);
     
     if (!username.trim() || !password) {
       setErrorMsg('Vui lòng điền đầy đủ tài khoản và mật khẩu!');
@@ -65,7 +143,8 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         if (!contentType.includes('application/json')) {
           const bodyText = await res.text();
           console.error("Non-JSON login response body:", bodyText);
-          throw new Error('Máy chủ phản hồi định dạng không hợp lệ (Không phải JSON). Có thể do cấu hình Cloudflare Tunnel chuyển hướng sai hoặc lỗi máy chủ.');
+          diagnoseHtmlResponse(bodyText, res.status);
+          throw new Error('Đường truyền phản hồi từ máy chủ không hợp lệ (Không phải JSON). Hãy xem bảng chẩn đoán hệ thống ngay bên dưới!');
         }
 
         const data = await res.json();
@@ -98,7 +177,8 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         if (!contentType.includes('application/json')) {
           const bodyText = await res.text();
           console.error("Non-JSON register response body:", bodyText);
-          throw new Error('Máy chủ phản hồi định dạng đăng ký không phải JSON. Hãy kiểm tra lại Cloudflare Tunnel.');
+          diagnoseHtmlResponse(bodyText, res.status);
+          throw new Error('Máy chủ phản hồi định dạng đăng ký không phải JSON. Hãy xem bảng chẩn đoán Cloudflare bên dưới!');
         }
 
         const data = await res.json();
@@ -121,6 +201,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const toggleAuthMode = () => {
     setErrorMsg('');
     setSuccessMsg('');
+    setCfDiagnostic(null);
     setIsLogin(!isLogin);
     setRequire2FA(false);
     setOtp('');
@@ -158,6 +239,37 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           <div className="flex items-start gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-emerald-400 text-sm mb-6 animate-fade-in" id="auth_success_box">
             <Check className="w-5 h-5 shrink-0 mt-0.5" />
             <span>{successMsg}</span>
+          </div>
+        )}
+
+        {cfDiagnostic && (
+          <div className="bg-slate-950/90 border border-amber-500/30 rounded-2xl p-5 mb-6 animate-fade-in text-slate-300 space-y-4 text-xs leading-relaxed" id="auth_cf_diagnostic_box">
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+              <Zap className="w-5 h-5 animate-pulse" />
+              <span>{cfDiagnostic.title}</span>
+            </div>
+            <p className="text-slate-400">{cfDiagnostic.details}</p>
+            
+            <div className="space-y-2">
+              <div className="font-semibold text-slate-200">🛠️ Các bước xử lý thực chiến:</div>
+              <ul className="list-decimal list-inside space-y-1.5 pl-1 text-slate-300">
+                {cfDiagnostic.steps.map((step, sIdx) => (
+                  <li key={sIdx} className="leading-normal">{step}</li>
+                ))}
+              </ul>
+            </div>
+
+            {cfDiagnostic.htmlExcerpt && (
+              <div className="space-y-1">
+                <div className="font-semibold text-slate-400 flex items-center justify-between">
+                  <span>Trích đoạn phản hồi nhận được (HTML):</span>
+                  <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-mono">STATUS {cfDiagnostic.status}</span>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg overflow-x-auto max-h-24 text-[10px] font-mono text-rose-300/80 break-all select-all whitespace-pre-wrap">
+                  {cfDiagnostic.htmlExcerpt}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
