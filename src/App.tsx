@@ -33,6 +33,7 @@ import ExportDocsSection from './components/ExportDocsSection';
 import FirebaseSection from './components/FirebaseSection';
 import { syncMessageToFirebase, syncGroupMessageToFirebase } from './lib/firebase';
 import { User, Friend, Message, ChatGroup, GroupMessage } from './types';
+import { apiFetch as fetch } from './lib/api';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('znet_auth_token'));
@@ -227,8 +228,25 @@ export default function App() {
           return;
         }
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
+        const storedBackend = localStorage.getItem('znet_backend_url');
+        const envBackend = (import.meta as any).env?.VITE_API_BASE_URL;
+        const backendUrl = storedBackend || envBackend || '';
+
+        let wsUrl = '';
+        if (backendUrl) {
+          try {
+            const parsedUrl = new URL(backendUrl);
+            const wsProtocol = parsedUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+            wsUrl = `${wsProtocol}//${parsedUrl.host}`;
+          } catch (e) {
+            const cleanUrl = backendUrl.replace(/^https?:\/\//, '');
+            const wsProtocol = backendUrl.startsWith('https') ? 'wss:' : 'ws:';
+            wsUrl = `${wsProtocol}//${cleanUrl}`;
+          }
+        } else {
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsUrl = `${protocol}//${window.location.host}`;
+        }
         console.log(`Connecting to Websocket Server on ZNet: ${wsUrl}`);
         
         const ws = new WebSocket(wsUrl);

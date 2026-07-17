@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Smile, Users, UserPlus, Sparkles, Check, Loader2, Info, Share2, Trash2, Undo2, Search, Calendar, X, Download } from 'lucide-react';
 import { ChatGroup, GroupMessage, Friend } from '../types';
 import EmojiPicker from './EmojiPicker';
+import { apiFetch as fetch } from '../lib/api';
 
 interface GroupChatWindowProps {
   group: ChatGroup;

@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, UserPlus, Check, X, ShieldAlert, Clock, UserCheck, MessageSquare, RefreshCw, Pin, UserMinus } from 'lucide-react';
 import { Friend } from '../types';
+import { apiFetch as fetch } from '../lib/api';
 
 interface FriendsListProps {
   token: string;

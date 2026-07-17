@@ -8,6 +8,7 @@ import { User, Shield, ShieldCheck, Key, ShieldAlert, Sparkles, Check, CheckCirc
 import { User as UserType } from '../types';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider, firebaseInitError } from '../lib/firebase';
+import { apiFetch as fetch } from '../lib/api';
 
 interface UserProfileProps {
   token: string;

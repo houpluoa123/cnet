@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, UserMinus, UserCheck, Shield, MessageSquare, Plus, Loader2, Sparkles, Send } from 'lucide-react';
 import { FeedPost, Friend, ChatGroup } from '../types';
+import { apiFetch as fetch } from '../lib/api';
 
 interface UserProfileModalProps {
   token: string;

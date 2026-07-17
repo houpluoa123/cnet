@@ -8,6 +8,7 @@ import { Shield, Key, UserPlus, LogIn, ChevronRight, Check, AlertCircle, Zap, Te
 import { User } from '../types';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider, firebaseInitError } from '../lib/firebase';
+import { apiFetch as fetch } from '../lib/api';
 
 interface AuthFormProps {
   onAuthSuccess: (token: string, user: User) => void;
@@ -41,6 +42,37 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [newPassword, setNewPassword] = useState<string>('');
   const [simulatedCode, setSimulatedCode] = useState<string>('');
   const [etherealUrl, setEtherealUrl] = useState<string>('');
+
+  const [showBackendConfig, setShowBackendConfig] = useState<boolean>(false);
+  const [backendUrlInput, setBackendUrlInput] = useState<string>(() => {
+    return localStorage.getItem('znet_backend_url') || '';
+  });
+
+  const saveBackendUrl = () => {
+    let url = backendUrlInput.trim();
+    if (!url) {
+      localStorage.removeItem('znet_backend_url');
+      setSuccessMsg('Đã khôi phục địa chỉ kết nối máy chủ về mặc định. Đang tải lại...');
+    } else {
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
+      localStorage.setItem('znet_backend_url', url);
+      setSuccessMsg(`Đã cấu hình liên kết máy chủ thành công tới: ${url}. Đang tải lại...`);
+    }
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+  };
+
+  const clearBackendUrl = () => {
+    localStorage.removeItem('znet_backend_url');
+    setBackendUrlInput('');
+    setSuccessMsg('Đã xóa địa chỉ kết nối máy chủ. Đang tải lại...');
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+  };
 
   const handleRequestResetCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -921,6 +953,68 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               </button>
             </div>
           </form>
+        )}
+      </div>
+
+      {/* Backend API Configuration Panel */}
+      <div className="mt-5 text-center relative z-10" id="backend_config_wrapper">
+        <button
+          type="button"
+          onClick={() => setShowBackendConfig(!showBackendConfig)}
+          className="text-slate-500 hover:text-slate-300 text-[11px] transition inline-flex items-center gap-1 hover:underline cursor-pointer"
+          id="toggle_backend_config_btn"
+        >
+          <span>⚙️ Cấu hình địa chỉ máy chủ ZNet (Cloudflare Pages/VPS)</span>
+        </button>
+
+        {showBackendConfig && (
+          <div className="mt-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 text-left shadow-xl animate-fade-in" id="backend_config_panel">
+            <h4 className="text-slate-200 font-bold text-xs mb-1.5 flex items-center gap-1.5">
+              <span>⚙️ Liên kết Máy chủ Backend</span>
+            </h4>
+            <p className="text-[10px] text-slate-400 mb-3.5 leading-normal">
+              Nếu bạn đang lưu trữ Giao diện (Frontend) trên Cloudflare Pages độc lập, hãy nhập địa chỉ URL của VPS Node.js Backend của bạn để liên kết dữ liệu và kết nối WebSocket:
+            </p>
+
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Ví dụ: https://znet.yourdomain.com hoặc https://dev-server.run.app"
+                  value={backendUrlInput}
+                  onChange={(e) => setBackendUrlInput(e.target.value)}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                  id="backend_url_input_field"
+                />
+                <button
+                  type="button"
+                  onClick={saveBackendUrl}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer"
+                  id="save_backend_url_btn"
+                >
+                  Lưu
+                </button>
+              </div>
+
+              {localStorage.getItem('znet_backend_url') ? (
+                <div className="text-[10px] text-indigo-400 flex justify-between items-center bg-indigo-500/5 px-2.5 py-1.5 rounded-lg border border-indigo-500/10">
+                  <span className="truncate max-w-[240px]">Đang dùng: {localStorage.getItem('znet_backend_url')}</span>
+                  <button
+                    type="button"
+                    onClick={clearBackendUrl}
+                    className="text-rose-400 hover:text-rose-300 font-semibold shrink-0 cursor-pointer"
+                    id="clear_backend_url_btn"
+                  >
+                    Xóa & Reset
+                  </button>
+                </div>
+              ) : (
+                <div className="text-[10px] text-slate-500 bg-slate-950 px-2.5 py-1.5 rounded-lg text-center">
+                  Mặc định: Sử dụng máy chủ hiện tại ({typeof window !== 'undefined' ? window.location.origin : ''})
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -17,6 +17,24 @@ import nodemailer from 'nodemailer';
 const app = express();
 const PORT = 3000;
 
+// CORS Middleware to support external frontends (like Cloudflare Pages) calling VPS backend
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Standard middleware
 app.use(express.json());
 app.use((err: any, req: any, res: any, next: any) => {

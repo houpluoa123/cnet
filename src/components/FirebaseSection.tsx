@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { db, firebaseConfig, syncUserToFirebase, syncMessageToFirebase, syncFeedPostToFirebase, syncGroupToFirebase, syncGroupMessageToFirebase } from '../lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import { apiFetch as fetch } from '../lib/api';
 
 interface FirebaseSectionProps {
   token: string;

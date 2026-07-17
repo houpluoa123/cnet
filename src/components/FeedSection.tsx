@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, MessageSquareHeart, Heart, Send, Users, Activity, ShieldAlert, MessageSquare, Share2, Trash2 } from 'lucide-react';
 import { FeedPost, User, Comment } from '../types';
 import { syncFeedPostToFirebase } from '../lib/firebase';
+import { apiFetch as fetch } from '../lib/api';
 
 interface FeedSectionProps {
   token: string;

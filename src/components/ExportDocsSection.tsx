@@ -22,6 +22,7 @@ import {
   Zap
 } from 'lucide-react';
 import { User } from '../types';
+import { apiFetch as fetch } from '../lib/api';
 
 interface ExportDocsSectionProps {
   token: string;
