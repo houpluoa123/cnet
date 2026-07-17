@@ -399,6 +399,9 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         msg = 'Tiến trình đăng nhập bằng Google đã bị hủy bỏ.';
       } else if (err.code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
         msg = 'Trình duyệt của bạn đã chặn cửa sổ Popup Google. Vui lòng cho phép hiện Popups hoặc mở ứng dụng trong tab mới để đăng nhập.';
+      } else if (err.code === 'auth/unauthorized-domain' || msg.toLowerCase().includes('unauthorized-domain') || msg.toLowerCase().includes('unauthorized_client')) {
+        const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'domain của bạn';
+        msg = `Tên miền "${currentDomain}" chưa được ủy quyền (Authorized Domain) trong Firebase Console của dự án "znet-e48ea". Hãy truy cập vào cài đặt Firebase Auth (https://console.firebase.google.com/project/znet-e48ea/authentication/providers), chọn tab "Settings", vào mục "Authorized domains" ở menu bên trái, nhấn "Add domain" rồi điền "${currentDomain}" để sửa lỗi này!`;
       }
       setErrorMsg(msg);
     } finally {

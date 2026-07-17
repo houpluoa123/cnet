@@ -18,17 +18,29 @@ const meta = import.meta as any;
 const configModules = meta.glob ? meta.glob("../../firebase-applet-config.json", { eager: true }) : {};
 const firebaseConfigFromJson: any = (configModules["../../firebase-applet-config.json"] as any)?.default || {};
 
+// Ultimate hardcoded fallback utilizing user's provided Firebase Project configuration for maximum portability
+const personalFallbackConfig = {
+  apiKey: "AIzaSyBcSe9tZzZKxNXxVcZ6n3oRj5Hq_G2YJiA",
+  authDomain: "znet-e48ea.firebaseapp.com",
+  projectId: "znet-e48ea",
+  storageBucket: "znet-e48ea.firebasestorage.app",
+  messagingSenderId: "137005116678",
+  appId: "1:137005116678:web:115cace3745cc6e0fb0287",
+  measurementId: "G-X93EDSXL6R",
+  firestoreDatabaseId: "(default)"
+};
+
 // Merge JSON with any env variables for cloud hosts like Cloudflare Pages, Vercel, Netlify, etc.
 const env = meta.env || {};
 export const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfigFromJson.apiKey || "",
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigFromJson.authDomain || "",
-  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfigFromJson.projectId || "",
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigFromJson.storageBucket || "",
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigFromJson.messagingSenderId || "",
-  appId: env.VITE_FIREBASE_APP_ID || firebaseConfigFromJson.appId || "",
-  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigFromJson.measurementId || "",
-  firestoreDatabaseId: env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigFromJson.firestoreDatabaseId || "",
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfigFromJson.apiKey || personalFallbackConfig.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigFromJson.authDomain || personalFallbackConfig.authDomain,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfigFromJson.projectId || personalFallbackConfig.projectId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigFromJson.storageBucket || personalFallbackConfig.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigFromJson.messagingSenderId || personalFallbackConfig.messagingSenderId,
+  appId: env.VITE_FIREBASE_APP_ID || firebaseConfigFromJson.appId || personalFallbackConfig.appId,
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigFromJson.measurementId || personalFallbackConfig.measurementId,
+  firestoreDatabaseId: env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigFromJson.firestoreDatabaseId || personalFallbackConfig.firestoreDatabaseId,
   oAuthClientId: env.VITE_FIREBASE_OAUTH_CLIENT_ID || firebaseConfigFromJson.oAuthClientId || ""
 };
 

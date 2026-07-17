@@ -76,6 +76,9 @@ export default function UserProfile({ token, user, onProfileUpdate, onLogout }: 
         msg = 'Cửa sổ đăng nhập Google đã bị đóng. Nếu bạn đang chạy ứng dụng trong khung xem trước AI Studio (iframe), vui lòng bấm nút "Mở trong tab mới" ở trên để đăng nhập Google thành công!';
       } else if (err.code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
         msg = 'Trình duyệt chặn popup. Hãy cấp quyền popup cho trang này và thử lại trong tab mới!';
+      } else if (err.code === 'auth/unauthorized-domain' || msg.toLowerCase().includes('unauthorized-domain') || msg.toLowerCase().includes('unauthorized_client')) {
+        const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'domain của bạn';
+        msg = `Tên miền "${currentDomain}" chưa được ủy quyền trong Firebase Console của dự án "znet-e48ea". Hãy truy cập vào cài đặt Firebase Auth (https://console.firebase.google.com/project/znet-e48ea/authentication/providers), chọn tab "Settings", chọn mục "Authorized domains", nhấn "Add domain" rồi điền "${currentDomain}" để liên kết Google thành công!`;
       }
       setGoogleLinkError(msg);
     } finally {
