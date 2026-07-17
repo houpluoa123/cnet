@@ -16,9 +16,8 @@ import {
   Check, 
   Flame
 } from 'lucide-react';
-import { db, syncUserToFirebase, syncMessageToFirebase, syncFeedPostToFirebase, syncGroupToFirebase, syncGroupMessageToFirebase } from '../lib/firebase';
+import { db, firebaseConfig, syncUserToFirebase, syncMessageToFirebase, syncFeedPostToFirebase, syncGroupToFirebase, syncGroupMessageToFirebase } from '../lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
 
 interface FirebaseSectionProps {
   token: string;

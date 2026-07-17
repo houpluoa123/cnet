@@ -12,15 +12,37 @@ import {
   enableIndexedDbPersistence 
 } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import firebaseConfig from "../../firebase-applet-config.json";
+
+// Safe config loader via Vite's wildcard import.meta.glob to avoid compile-time build failure if the JSON is missing!
+const meta = import.meta as any;
+const configModules = meta.glob ? meta.glob("../../firebase-applet-config.json", { eager: true }) : {};
+const firebaseConfigFromJson: any = (configModules["../../firebase-applet-config.json"] as any)?.default || {};
+
+// Merge JSON with any env variables for cloud hosts like Cloudflare Pages, Vercel, Netlify, etc.
+const env = meta.env || {};
+export const firebaseConfig = {
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfigFromJson.apiKey || "",
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigFromJson.authDomain || "",
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfigFromJson.projectId || "",
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigFromJson.storageBucket || "",
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigFromJson.messagingSenderId || "",
+  appId: env.VITE_FIREBASE_APP_ID || firebaseConfigFromJson.appId || "",
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigFromJson.measurementId || "",
+  firestoreDatabaseId: env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigFromJson.firestoreDatabaseId || "",
+  oAuthClientId: env.VITE_FIREBASE_OAUTH_CLIENT_ID || firebaseConfigFromJson.oAuthClientId || ""
+};
 
 // Initialize Firebase safely
 let app;
 try {
-  if (getApps().length === 0) {
-    app = initializeApp(firebaseConfig);
+  if (firebaseConfig.apiKey) {
+    if (getApps().length === 0) {
+      app = initializeApp(firebaseConfig);
+    } else {
+      app = getApp();
+    }
   } else {
-    app = getApp();
+    console.warn("Firebase App initialization skipped: No API Key provided.");
   }
 } catch (error) {
   console.error("Firebase App initialization failed:", error);
