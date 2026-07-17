@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { Shield, Key, UserPlus, LogIn, ChevronRight, Check, AlertCircle, Zap, Terminal, Copy, Chrome } from 'lucide-react';
 import { User } from '../types';
 import { signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../lib/firebase';
+import { auth, googleProvider, firebaseInitError } from '../lib/firebase';
 
 interface AuthFormProps {
   onAuthSuccess: (token: string, user: User) => void;
@@ -328,7 +328,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
   const handleGoogleSignIn = async () => {
     if (!auth) {
-      setErrorMsg('Hệ thống Firebase Auth chưa được khởi tạo thành công.');
+      setErrorMsg(`Hệ thống Firebase Auth chưa được khởi tạo thành công. ${firebaseInitError ? `Chi tiết: ${firebaseInitError.message}` : 'Không tìm thấy cấu hình Firebase.'}`);
       return;
     }
     setErrorMsg('');

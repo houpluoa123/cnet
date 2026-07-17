@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { User, Shield, ShieldCheck, Key, ShieldAlert, Sparkles, Check, CheckCircle2, Chrome } from 'lucide-react';
 import { User as UserType } from '../types';
 import { signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../lib/firebase';
+import { auth, googleProvider, firebaseInitError } from '../lib/firebase';
 
 interface UserProfileProps {
   token: string;
@@ -31,7 +31,7 @@ export default function UserProfile({ token, user, onProfileUpdate, onLogout }: 
 
   const handleLinkGoogle = async () => {
     if (!auth) {
-      setGoogleLinkError('Hệ thống Firebase Auth chưa được khởi tạo.');
+      setGoogleLinkError(`Hệ thống Firebase Auth chưa được khởi tạo. ${firebaseInitError ? `Chi tiết: ${firebaseInitError.message}` : 'Không tìm thấy cấu hình Firebase.'}`);
       return;
     }
     setGoogleLinkMsg('');
