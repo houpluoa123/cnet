@@ -393,6 +393,9 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         if (data.requireOTP) {
           setRequireRegisterOTP(true);
           setSuccessMsg(data.message || 'Mã xác thực đăng ký đã được gửi tới Email của bạn. Vui lòng nhập mã để hoàn tất!');
+          if (data.devCodeFallback) {
+            setRegisterOtp(data.devCodeFallback);
+          }
         } else {
           setSuccessMsg('Đăng ký tài khoản ZNet thành công! Vui lòng tiến hành đăng nhập.');
           setIsLogin(true);
@@ -479,6 +482,9 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       if (data.requireOTP) {
         setRequireGoogleOTP(true);
         setSuccessMsg(data.message || 'Vui lòng nhập mã OTP gửi tới Email Google của bạn để hoàn tất đăng nhập!');
+        if (data.devCodeFallback) {
+          setGoogleOtp(data.devCodeFallback);
+        }
       } else if (data.success && data.token && data.user) {
         onAuthSuccess(data.token, data.user);
         setRequireGoogleOTP(false);

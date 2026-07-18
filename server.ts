@@ -510,6 +510,8 @@ app.post('/api/auth/register', async (req, res) => {
       console.log(`[REGISTER OTP] Generated code for ${cleanEmail}: ${code}`);
 
       // Send the real email
+      let mailSent = true;
+      let warningMsg = '';
       try {
         await sendOTPEmail(
           cleanEmail,
@@ -520,14 +522,16 @@ app.post('/api/auth/register', async (req, res) => {
         );
       } catch (mailError: any) {
         console.error("Nodemailer registration send failing:", mailError);
-        return res.status(500).json({
-          error: `Không thể gửi mã xác nhận tới Email của bạn: ${mailError.message || 'Lỗi SMTP'}`
-        });
+        mailSent = false;
+        warningMsg = ` (Lưu ý: Không gửi được email qua SMTP do lỗi: ${mailError.message || 'Lỗi SMTP'}. Vui lòng sử dụng mã OTP thử nghiệm này để tiếp tục thiết lập tài khoản: ${code})`;
       }
 
       return res.json({
         requireOTP: true,
-        message: `Hệ thống đã gửi một mã xác minh OTP gồm 6 chữ số tới Email ${cleanEmail}. Vui lòng nhập mã để hoàn tất đăng ký!`
+        message: mailSent 
+          ? `Hệ thống đã gửi một mã xác minh OTP gồm 6 chữ số tới Email ${cleanEmail}. Vui lòng nhập mã để hoàn tất đăng ký!`
+          : `Gặp sự cố gửi email thực tế.${warningMsg}`,
+        devCodeFallback: mailSent ? undefined : code
       });
     }
 
@@ -642,6 +646,8 @@ app.post('/api/auth/google-signin', async (req, res) => {
       console.log(`[GOOGLE SIGNIN OTP] Generated code for ${cleanEmail}: ${code}`);
 
       // Send Email
+      let mailSent = true;
+      let warningMsg = '';
       try {
         await sendOTPEmail(
           cleanEmail,
@@ -652,14 +658,16 @@ app.post('/api/auth/google-signin', async (req, res) => {
         );
       } catch (mailError: any) {
         console.error("Nodemailer google-signin send failing:", mailError);
-        return res.status(500).json({
-          error: `Không thể gửi mã xác nhận tới Email Google của bạn: ${mailError.message || 'Lỗi SMTP'}`
-        });
+        mailSent = false;
+        warningMsg = ` (Lưu ý: Không gửi được email qua SMTP do lỗi: ${mailError.message || 'Lỗi SMTP'}. Vui lòng sử dụng mã OTP thử nghiệm này để tiếp tục truy cập: ${code})`;
       }
 
       return res.json({
         requireOTP: true,
-        message: `Hệ thống đã gửi mã xác thực OTP gồm 6 chữ số tới Email Google (${cleanEmail}) của bạn để hoàn tất đăng nhập!`
+        message: mailSent 
+          ? `Hệ thống đã gửi mã xác thực OTP gồm 6 chữ số tới Email Google (${cleanEmail}) của bạn để hoàn tất đăng nhập!`
+          : `Gặp sự cố gửi email thực tế.${warningMsg}`,
+        devCodeFallback: mailSent ? undefined : code
       });
     }
 
@@ -801,21 +809,24 @@ interface PendingGoogleLogin {
 const pendingRegistrations = new Map<string, PendingRegistration>();
 const pendingGoogleLogins = new Map<string, PendingGoogleLogin>();
 
-// Helper to send real emails via Nodemailer with pre-configured secure Gmail defaults
+// Helper to send real emails via Nodemailer with pre-configured secure Gmail defaults or custom SMTP variables
 async function sendOTPEmail(toEmail: string, username: string, otp: string, subject: string, actionText: string): Promise<boolean> {
-  const host = 'smtp.gmail.com';
-  const port = '465';
-  const user = 'opaas315@gmail.com';
-  const pass = 'nmfpwjuvxcplyyxq';
-  const from = '"ZNet Security" <opaas315@gmail.com>';
+  const host = (process.env.SMTP_HOST && process.env.SMTP_HOST.trim()) || 'smtp.gmail.com';
+  const port = (process.env.SMTP_PORT && process.env.SMTP_PORT.trim()) || '465';
+  const user = (process.env.SMTP_USER && process.env.SMTP_USER.trim()) || 'opaas315@gmail.com';
+  const pass = (process.env.SMTP_PASS && process.env.SMTP_PASS.trim()) || 'nmfpwjuvxcplyyxq';
+  const from = (process.env.SMTP_FROM && process.env.SMTP_FROM.trim()) || '"ZNet Security" <opaas315@gmail.com>';
+
+  const parsedPort = parseInt(port, 10) || 465;
+  const isSecure = parsedPort === 465;
 
   const transporter = nodemailer.createTransport({
-    host: host.trim(),
-    port: parseInt(port.trim(), 10),
-    secure: true, // SSL for 465
+    host: host,
+    port: parsedPort,
+    secure: isSecure, // SSL for 465, STARTTLS for 587
     auth: {
-      user: user.trim(),
-      pass: pass.trim(),
+      user: user,
+      pass: pass,
     },
     tls: {
       rejectUnauthorized: false
@@ -862,21 +873,24 @@ async function sendOTPEmail(toEmail: string, username: string, otp: string, subj
   return true;
 }
 
-// Helper to send real emails via Nodemailer
+// Helper to send real emails via Nodemailer with custom SMTP variables support
 async function sendResetEmailViaNodemailer(toEmail: string, username: string, resetCode: string): Promise<{ success: boolean; etherealUrl?: string }> {
-  const host = 'smtp.gmail.com';
-  const port = '465';
-  const user = 'opaas315@gmail.com';
-  const pass = 'nmfpwjuvxcplyyxq';
-  const from = '"ZNet Security" <opaas315@gmail.com>';
+  const host = (process.env.SMTP_HOST && process.env.SMTP_HOST.trim()) || 'smtp.gmail.com';
+  const port = (process.env.SMTP_PORT && process.env.SMTP_PORT.trim()) || '465';
+  const user = (process.env.SMTP_USER && process.env.SMTP_USER.trim()) || 'opaas315@gmail.com';
+  const pass = (process.env.SMTP_PASS && process.env.SMTP_PASS.trim()) || 'nmfpwjuvxcplyyxq';
+  const from = (process.env.SMTP_FROM && process.env.SMTP_FROM.trim()) || '"ZNet Security" <opaas315@gmail.com>';
+
+  const parsedPort = parseInt(port, 10) || 465;
+  const isSecure = parsedPort === 465;
 
   const transporter = nodemailer.createTransport({
-    host: host.trim(),
-    port: parseInt(port.trim(), 10),
-    secure: true, // SSL for 465
+    host: host,
+    port: parsedPort,
+    secure: isSecure, // SSL for 465, STARTTLS for 587
     auth: {
-      user: user.trim(),
-      pass: pass.trim(),
+      user: user,
+      pass: pass,
     },
     tls: {
       rejectUnauthorized: false
@@ -950,14 +964,15 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     // Send the real email
     let etherealUrl: string | undefined;
+    let mailSent = true;
+    let warningMsg = '';
     try {
       const mailResult = await sendResetEmailViaNodemailer(user.email, user.username, resetCode);
       etherealUrl = mailResult.etherealUrl;
     } catch (mailError: any) {
       console.error("Nodemailer sending failed:", mailError);
-      return res.status(500).json({
-        error: `Không thể gửi Email thực tế: ${mailError.message || 'Lỗi kết nối SMTP'}`
-      });
+      mailSent = false;
+      warningMsg = ` (Lưu ý: Không gửi được email qua SMTP do lỗi: ${mailError.message || 'Lỗi SMTP'}. Vui lòng sử dụng mã xác minh khôi phục mật khẩu thử nghiệm này: ${resetCode})`;
     }
 
     await dbRun(
@@ -969,10 +984,13 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Mã xác minh phục hồi mật khẩu đã được gửi tới hòm thư của bạn (${user.email})! Hãy kiểm tra hòm thư chính và thư rác (Spam).`,
+      message: mailSent 
+        ? `Mã xác minh phục hồi mật khẩu đã được gửi tới hòm thư của bạn (${user.email})! Hãy kiểm tra hòm thư chính và thư rác (Spam).`
+        : `Lỗi gửi email thực tế qua SMTP.${warningMsg}`,
       username: user.username,
       code: resetCode,
-      etherealUrl
+      etherealUrl,
+      devCodeFallback: mailSent ? undefined : resetCode
     });
   } catch (err) {
     console.error("Forgot password error:", err);

@@ -233,7 +233,7 @@ export default function App() {
         const backendUrl = storedBackend || envBackend || '';
 
         let wsUrl = '';
-        if (backendUrl) {
+        if (backendUrl && reconnectAttemptsRef.current < 3) {
           try {
             const parsedUrl = new URL(backendUrl);
             const wsProtocol = parsedUrl.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -244,6 +244,9 @@ export default function App() {
             wsUrl = `${wsProtocol}//${cleanUrl}`;
           }
         } else {
+          if (backendUrl && reconnectAttemptsRef.current >= 3) {
+            console.warn(`[ZNet WS] WebSocket connection failed 3+ times with custom backend. Falling back to current origin WebSocket.`);
+          }
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
           wsUrl = `${protocol}//${window.location.host}`;
         }
