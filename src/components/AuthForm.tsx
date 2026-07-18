@@ -48,6 +48,68 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     return localStorage.getItem('znet_backend_url') || '';
   });
 
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testResultMsg, setTestResultMsg] = useState<string>('');
+
+  const testBackendConnection = async () => {
+    setTestStatus('testing');
+    setTestResultMsg('');
+    let url = backendUrlInput.trim();
+    if (!url) {
+      // Test current origin
+      url = window.location.origin;
+    } else {
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        const isIpOrLocal = /^[0-9.]+$/.test(url.split(':')[0]) || url.includes('localhost') || url.includes('127.0.0.1');
+        url = (isIpOrLocal ? 'http://' : 'https://') + url;
+      }
+    }
+
+    if (url.endsWith('/')) {
+      url = url.slice(0, -1);
+    }
+
+    try {
+      console.log(`[ZNET TESTING] Fetching ping from: ${url}/api/ping`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
+
+      const res = await window.fetch(`${url}/api/ping`, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && (data.success || data.status === 'ok')) {
+          setTestStatus('success');
+          setTestResultMsg(`Kết nối thành công! Đã liên kết tới máy chủ và nhận phản hồi ping từ ${url} hợp lệ.`);
+        } else {
+          setTestStatus('error');
+          setTestResultMsg(`Phản hồi từ ${url} không mong muốn (Mã: ${res.status}). Có thể bạn chưa chạy tệp server.ts đã biên dịch mới nhất trên VPS.`);
+        }
+      } else {
+        setTestStatus('error');
+        setTestResultMsg(`Kết nối thất bại: Máy chủ trả về mã lỗi HTTP ${res.status}. Vui lòng kiểm tra lại cấu hình VPS.`);
+      }
+    } catch (e: any) {
+      console.error("[ZNET TESTING] Connection error:", e);
+      setTestStatus('error');
+      
+      let errMsg = `Không thể kết nối đến máy chủ tại: ${url}. `;
+      if (e.name === 'AbortError') {
+        errMsg += 'Thời gian chờ kết nối quá hạn (Timeout 6 giây).';
+      } else if (window.location.protocol === 'https:' && url.startsWith('http://')) {
+        errMsg += 'Lỗi Mixed Content: Trình duyệt chặn kết nối HTTP từ trang HTTPS này. Bạn PHẢI cấu hình SSL (HTTPS) cho VPS backend hoặc chạy cả frontend trên HTTP để có thể kết nối.';
+      } else {
+        errMsg += 'Có thể do sai cổng, máy chủ chưa chạy, lỗi CORS hoặc chứng chỉ SSL của tên miền backend chưa được cài đặt.';
+      }
+      setTestResultMsg(errMsg);
+    }
+  };
+
   const saveBackendUrl = () => {
     let url = backendUrlInput.trim();
     if (!url) {
@@ -55,7 +117,8 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       setSuccessMsg('Đã khôi phục địa chỉ kết nối máy chủ về mặc định. Đang tải lại...');
     } else {
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        url = 'https://' + url;
+        const isIpOrLocal = /^[0-9.]+$/.test(url.split(':')[0]) || url.includes('localhost') || url.includes('127.0.0.1');
+        url = (isIpOrLocal ? 'http://' : 'https://') + url;
       }
       localStorage.setItem('znet_backend_url', url);
       setSuccessMsg(`Đã cấu hình liên kết máy chủ thành công tới: ${url}. Đang tải lại...`);
@@ -968,8 +1031,8 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         </button>
 
         {showBackendConfig && (
-          <div className="mt-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 text-left shadow-xl animate-fade-in" id="backend_config_panel">
-            <h4 className="text-slate-200 font-bold text-xs mb-1.5 flex items-center gap-1.5">
+          <div className="mt-3 bg-slate-900/95 border border-slate-800 rounded-2xl p-5 text-left shadow-xl animate-fade-in text-slate-300" id="backend_config_panel">
+            <h4 className="text-slate-100 font-bold text-xs mb-1.5 flex items-center gap-1.5">
               <span>⚙️ Liên kết Máy chủ Backend</span>
             </h4>
             <p className="text-[10px] text-slate-400 mb-3.5 leading-normal">
@@ -980,12 +1043,21 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Ví dụ: https://znet.yourdomain.com hoặc https://dev-server.run.app"
+                  placeholder="Ví dụ: znet-backend.yourdomain.com hoặc 123.45.67.89:3000"
                   value={backendUrlInput}
                   onChange={(e) => setBackendUrlInput(e.target.value)}
                   className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
                   id="backend_url_input_field"
                 />
+                <button
+                  type="button"
+                  onClick={testBackendConnection}
+                  disabled={testStatus === 'testing'}
+                  className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer"
+                  id="test_backend_url_btn"
+                >
+                  {testStatus === 'testing' ? 'Đang thử...' : 'Kiểm tra'}
+                </button>
                 <button
                   type="button"
                   onClick={saveBackendUrl}
@@ -995,6 +1067,25 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
                   Lưu
                 </button>
               </div>
+
+              {testStatus !== 'idle' && (
+                <div className={`text-[10px] p-2.5 rounded-lg border leading-relaxed ${
+                  testStatus === 'success' 
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                    : testStatus === 'testing' 
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 animate-pulse' 
+                    : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                }`} id="connection_test_result">
+                  {testStatus === 'success' && <span>🟢 {testResultMsg}</span>}
+                  {testStatus === 'testing' && <span>⏳ Đang gửi tín hiệu ping kiểm tra kết nối đến máy chủ...</span>}
+                  {testStatus === 'error' && (
+                    <div className="space-y-1">
+                      <span className="font-semibold block">🔴 Lỗi kết nối:</span>
+                      <p>{testResultMsg}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {localStorage.getItem('znet_backend_url') ? (
                 <div className="text-[10px] text-indigo-400 flex justify-between items-center bg-indigo-500/5 px-2.5 py-1.5 rounded-lg border border-indigo-500/10">
@@ -1009,7 +1100,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
                   </button>
                 </div>
               ) : (
-                <div className="text-[10px] text-slate-500 bg-slate-950 px-2.5 py-1.5 rounded-lg text-center">
+                <div className="text-[10px] text-slate-500 bg-slate-950 px-2.5 py-1.5 rounded-lg text-center border border-slate-900">
                   Mặc định: Sử dụng máy chủ hiện tại ({typeof window !== 'undefined' ? window.location.origin : ''})
                 </div>
               )}

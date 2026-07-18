@@ -562,6 +562,11 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// Ping check endpoint for diagnostics
+app.get('/api/ping', (req, res) => {
+  res.json({ success: true, status: 'ok', message: 'ZNet Backend is alive and kicking!' });
+});
+
 // Login Endpoint
 app.post('/api/auth/login', async (req, res) => {
   try {
