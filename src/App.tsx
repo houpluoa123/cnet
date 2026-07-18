@@ -112,19 +112,40 @@ export default function App() {
   const fetchCurrentUserProfile = async (authToken: string) => {
     try {
       setIsPreAuthing(true);
-      const res = await fetch('/api/auth/me', {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-      if (res.ok) {
+      
+      const { data: sbData } = await supabase.auth.getSession();
+      const sbUser = sbData?.session?.user;
+
+      let res;
+      let isJson = false;
+      try {
+        res = await fetch('/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
         const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const userData = await res.json();
-          setCurrentUser(userData);
-        } else {
-          console.warn("Non-JSON response from /api/auth/me during session load, clearing token", res.status);
-          localStorage.removeItem('znet_auth_token');
-          setToken(null);
-        }
+        isJson = contentType.includes('application/json');
+      } catch (err) {
+        console.warn("Failed to reach /api/auth/me backend:", err);
+      }
+
+      if (res && res.ok && isJson) {
+        const userData = await res.json();
+        setCurrentUser(userData);
+      } else if (sbUser) {
+        console.log("[ZNet Auth] /api/auth/me backend not available or returned non-JSON. Utilizing Supabase session as single source of truth.");
+        const displayName = sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || sbUser.email?.split('@')[0] || 'user';
+        const photoURL = sbUser.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${displayName}`;
+        const virtualUser: User = {
+          id: 999999,
+          username: displayName,
+          avatar: photoURL,
+          status: 'online',
+          twoFactorEnabled: false,
+          role: 'user',
+          googleId: sbUser.id,
+          email: sbUser.email
+        };
+        setCurrentUser(virtualUser);
       } else {
         // Clear broken session
         localStorage.removeItem('znet_auth_token');
@@ -158,29 +179,49 @@ export default function App() {
           const displayName = sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || email?.split('@')[0] || '';
           const photoURL = sbUser.user_metadata?.avatar_url || '';
 
-          const res = await fetch('/api/auth/google-signin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              googleId,
-              email,
-              displayName,
-              photoURL,
-              bypassOtp: true
-            })
-          });
+          let resOk = false;
+          let responseData = null;
+          try {
+            const res = await fetch('/api/auth/google-signin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                googleId,
+                email,
+                displayName,
+                photoURL,
+                bypassOtp: true
+              })
+            });
+            resOk = res.ok;
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+              responseData = await res.json();
+            }
+          } catch (e) {
+            console.warn("Google Signin SQLite Sync API offline:", e);
+          }
 
-          const responseData = await res.json().catch(() => null);
-          if (res.ok && responseData && responseData.success && responseData.token) {
+          if (resOk && responseData && responseData.success && responseData.token) {
             localStorage.setItem('znet_auth_token', responseData.token);
             setToken(responseData.token);
             setCurrentUser(responseData.user);
           } else {
-            console.error("Failed to sync Supabase Google OAuth with local backend:", responseData?.error);
-            await supabase.auth.signOut();
-            localStorage.removeItem('znet_auth_token');
-            setToken(null);
-            setCurrentUser(null);
+            console.warn("Deploying pure client-side session from Supabase for Google OAuth user (SQLite backend unreachable)");
+            const virtualUser: User = {
+              id: 999999,
+              username: displayName,
+              avatar: photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${displayName}`,
+              status: 'online',
+              twoFactorEnabled: false,
+              role: 'user',
+              googleId: googleId,
+              email: email
+            };
+            const virtualToken = data.session.access_token || 'sb_token_' + googleId;
+            localStorage.setItem('znet_auth_token', virtualToken);
+            setToken(virtualToken);
+            setCurrentUser(virtualUser);
           }
           setIsPreAuthing(false);
         }
