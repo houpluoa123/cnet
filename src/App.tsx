@@ -34,6 +34,7 @@ import FirebaseSection from './components/FirebaseSection';
 import { syncMessageToFirebase, syncGroupMessageToFirebase } from './lib/firebase';
 import { User, Friend, Message, ChatGroup, GroupMessage } from './types';
 import { apiFetch as fetch } from './lib/api';
+import { supabase } from './supabaseClient';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('znet_auth_token'));
@@ -137,16 +138,62 @@ export default function App() {
   };
 
   useEffect(() => {
-    try {
-      if (token) {
-        fetchCurrentUserProfile(token);
-      } else {
+    const checkSupabaseSessionAndFetchProfile = async () => {
+      try {
+        setIsPreAuthing(true);
+        const { data, error } = await supabase.auth.getSession();
+        if (error || !data.session) {
+          console.warn("No active Supabase session, clearing local auth", error);
+          localStorage.removeItem('znet_auth_token');
+          setToken(null);
+          setCurrentUser(null);
+          setIsPreAuthing(false);
+        } else if (token) {
+          await fetchCurrentUserProfile(token);
+        } else {
+          // No local token but we have a Supabase session (redirected from Google OAuth)
+          const sbUser = data.session.user;
+          const googleId = sbUser.id;
+          const email = sbUser.email;
+          const displayName = sbUser.user_metadata?.full_name || sbUser.user_metadata?.name || email?.split('@')[0] || '';
+          const photoURL = sbUser.user_metadata?.avatar_url || '';
+
+          const res = await fetch('/api/auth/google-signin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              googleId,
+              email,
+              displayName,
+              photoURL,
+              bypassOtp: true
+            })
+          });
+
+          const responseData = await res.json().catch(() => null);
+          if (res.ok && responseData && responseData.success && responseData.token) {
+            localStorage.setItem('znet_auth_token', responseData.token);
+            setToken(responseData.token);
+            setCurrentUser(responseData.user);
+          } else {
+            console.error("Failed to sync Supabase Google OAuth with local backend:", responseData?.error);
+            await supabase.auth.signOut();
+            localStorage.removeItem('znet_auth_token');
+            setToken(null);
+            setCurrentUser(null);
+          }
+          setIsPreAuthing(false);
+        }
+      } catch (e) {
+        console.error("Critical failure during session or profile check:", e);
+        localStorage.removeItem('znet_auth_token');
+        setToken(null);
+        setCurrentUser(null);
         setIsPreAuthing(false);
       }
-    } catch (e) {
-      console.error("Critical failure during mount:", e);
-      setIsPreAuthing(false);
-    }
+    };
+
+    checkSupabaseSessionAndFetchProfile();
   }, [token]);
 
   // Helper helper to fetch user profile details for out-of-tab visual alerts
@@ -936,6 +983,7 @@ export default function App() {
 
   const handleLogout = () => {
     try {
+      supabase.auth.signOut().catch(err => console.error("Supabase signOut failed:", err));
       localStorage.removeItem('znet_auth_token');
       // Truncate state
       setToken(null);

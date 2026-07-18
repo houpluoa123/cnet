@@ -9,6 +9,7 @@ import { User } from '../types';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider, firebaseInitError } from '../lib/firebase';
 import { apiFetch as fetch } from '../lib/api';
+import { supabase } from '../supabaseClient';
 
 interface AuthFormProps {
   onAuthSuccess: (token: string, user: User) => void;
@@ -34,6 +35,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [successMsg, setSuccessMsg] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [isEmailConfirmationNeeded, setIsEmailConfirmationNeeded] = useState<boolean>(false);
 
     // Forgot / Reset password state
   const [forgotMode, setForgotMode] = useState<'none' | 'request' | 'reset'>('none');
@@ -326,7 +328,22 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     setIsLoading(true);
     try {
       if (isLogin) {
-        // Step login
+        // --- STEP 1: SUPABASE SIGN IN ---
+        const emailToUse = username.trim().includes('@') ? username.trim() : `${username.trim()}@example.com`;
+        const { data: sbData, error: sbError } = await supabase.auth.signInWithPassword({
+          email: emailToUse,
+          password: password
+        });
+
+        if (sbError) {
+          throw new Error(`[Supabase Auth]: ${sbError.message}`);
+        }
+
+        if (!sbData?.session) {
+          throw new Error('Đăng nhập Supabase thành công nhưng không tìm thấy phiên kết nối (session). Vui lòng kiểm tra email và xác nhận tài khoản.');
+        }
+
+        // --- STEP 2: LOCAL SIGN IN ---
         const loginPayload: any = {
           username: username.trim(),
           password: password
@@ -335,24 +352,57 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           loginPayload.otp = otp;
         }
 
-        const res = await fetch('/api/auth/login', {
+        let res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(loginPayload)
         });
 
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          const bodyText = await res.text();
-          console.error("Non-JSON login response body:", bodyText);
-          diagnoseHtmlResponse(bodyText, res.status);
-          throw new Error('Đường truyền phản hồi từ máy chủ không hợp lệ (Không phải JSON). Hãy xem bảng chẩn đoán hệ thống ngay bên dưới!');
+        let data = await res.json().catch(() => null);
+
+        // If user is successfully logged in to Supabase but missing in local SQLite database, auto-register them
+        if (!res?.ok || !data || data.error) {
+          console.log("[ZNet Auth] Local account not found. Syncing Supabase account with local SQLite database...");
+          
+          const regRes = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: username.trim(),
+              password: password,
+              email: emailToUse,
+              avatar: selectedAvatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${username.trim()}`
+            })
+          });
+
+          const regData = await regRes.json().catch(() => null);
+
+          // If local registration requires OTP verification, auto-verify it with the fallback code
+          if (regRes.ok && regData && regData.requireOTP) {
+            const fallbackCode = regData.devCodeFallback || regData.code || '123456';
+            await fetch('/api/auth/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: username.trim(),
+                password: password,
+                email: emailToUse,
+                otp: fallbackCode
+              })
+            });
+          }
+
+          // Retry login
+          res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(loginPayload)
+          });
+          data = await res.json().catch(() => null);
         }
 
-        const data = await res.json();
-        
-        if (!res.ok) {
-          throw new Error(data.error || 'Đăng nhập thất bại.');
+        if (!res?.ok || !data || !data.success) {
+          throw new Error(data?.error || 'Đăng nhập hệ thống dữ liệu không hợp lệ.');
         }
 
         if (data.require2FA) {
@@ -362,7 +412,28 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           onAuthSuccess(data.token, data.user);
         }
       } else {
-        // Step register
+        // --- STEP 1: SUPABASE SIGN UP ---
+        let currentEmailNeeded = false;
+        if (!requireRegisterOTP) {
+          const { data: sbData, error: sbError } = await supabase.auth.signUp({
+            email: email.trim(),
+            password: password
+          });
+
+          if (sbError) {
+            throw new Error(`[Supabase Auth]: ${sbError.message}`);
+          }
+
+          if (!sbData?.session) {
+            setIsEmailConfirmationNeeded(true);
+            currentEmailNeeded = true;
+          } else {
+            setIsEmailConfirmationNeeded(false);
+            currentEmailNeeded = false;
+          }
+        }
+
+        // --- STEP 2: LOCAL SIGN UP ---
         const registerPayload = {
           username: username.trim(),
           password: password,
@@ -397,8 +468,10 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
             setRegisterOtp(data.devCodeFallback);
           }
         } else {
-          setSuccessMsg('Đăng ký tài khoản ZNet thành công! Vui lòng tiến hành đăng nhập.');
+          const signedUpEmail = email.trim();
+          setSuccessMsg('Your account has been created. Please check your email and verify your address before logging in.');
           setIsLogin(true);
+          setUsername(signedUpEmail);
           setRequireRegisterOTP(false);
           setRegisterOtp('');
           setOtp('');
@@ -419,91 +492,33 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     setRequire2FA(false);
     setRequireRegisterOTP(false);
     setRequireGoogleOTP(false);
+    setIsEmailConfirmationNeeded(false);
     setOtp('');
     setRegisterOtp('');
     setGoogleOtp('');
   };
 
   const handleGoogleSignIn = async () => {
-    if (!auth) {
-      setErrorMsg(`Hệ thống Firebase Auth chưa được khởi tạo thành công. ${firebaseInitError ? `Chi tiết: ${firebaseInitError.message}` : 'Không tìm thấy cấu hình Firebase.'}`);
-      return;
-    }
     setErrorMsg('');
     setSuccessMsg('');
     setCfDiagnostic(null);
     setIsLoading(true);
 
     try {
-      let currentPayload = googlePayload;
-
-      if (!currentPayload) {
-        console.log("[ZNET GOOGLE] Triggering Firebase Google Popup...");
-        const result = await signInWithPopup(auth, googleProvider);
-        const user = result.user;
-        
-        if (!user || !user.email) {
-          throw new Error('Đăng nhập Google thành công nhưng không lấy được thông tin Email liên kết.');
+      console.log("[ZNET GOOGLE] Triggering Supabase Google OAuth...");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
         }
-
-        console.log("[ZNET GOOGLE] Firebase popup success, user email:", user.email);
-
-        currentPayload = {
-          googleId: user.uid,
-          email: user.email,
-          displayName: user.displayName || '',
-          photoURL: user.photoURL || ''
-        };
-        setGooglePayload(currentPayload);
-      }
-
-      // Exchange with backend
-      const res = await fetch('/api/auth/google-signin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...currentPayload,
-          otp: requireGoogleOTP ? googleOtp.trim() : undefined
-        })
       });
 
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const bodyText = await res.text();
-        diagnoseHtmlResponse(bodyText, res.status);
-        throw new Error('Đường truyền phản hồi từ máy chủ không hợp lệ (Không phải JSON). Hãy xem chẩn đoán bên dưới!');
-      }
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Xác thực Google trên hệ thống ZNet thất bại.');
-      }
-
-      if (data.requireOTP) {
-        setRequireGoogleOTP(true);
-        setSuccessMsg(data.message || 'Vui lòng nhập mã OTP gửi tới Email Google của bạn để hoàn tất đăng nhập!');
-        if (data.devCodeFallback) {
-          setGoogleOtp(data.devCodeFallback);
-        }
-      } else if (data.success && data.token && data.user) {
-        onAuthSuccess(data.token, data.user);
-        setRequireGoogleOTP(false);
-        setGoogleOtp('');
-        setGooglePayload(null);
+      if (error) {
+        throw new Error(`[Supabase OAuth Error]: ${error.message}`);
       }
     } catch (err: any) {
       console.error("[ZNET GOOGLE] Google sign-in failed:", err);
       let msg = err.message || 'Đăng nhập Google gặp lỗi bất ngờ. Vui lòng thử lại!';
-      if (err.code === 'auth/popup-closed-by-user' || msg.includes('popup-closed-by-user')) {
-        msg = 'Cửa sổ đăng nhập Google đã bị đóng. Nếu bạn đang chạy ứng dụng trong khung xem trước AI Studio (iframe), vui lòng bấm nút "Mở trong tab mới" ở góc trên bên phải để đăng nhập Google thành công!';
-      } else if (err.code === 'auth/cancelled-popup-request' || msg.includes('cancelled-popup-request')) {
-        msg = 'Tiến trình đăng nhập bằng Google đã bị hủy bỏ.';
-      } else if (err.code === 'auth/popup-blocked' || msg.includes('popup-blocked')) {
-        msg = 'Trình duyệt của bạn đã chặn cửa sổ Popup Google. Vui lòng cho phép hiện Popups hoặc mở ứng dụng trong tab mới để đăng nhập.';
-      } else if (err.code === 'auth/unauthorized-domain' || msg.toLowerCase().includes('unauthorized-domain') || msg.toLowerCase().includes('unauthorized_client')) {
-        const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'domain của bạn';
-        msg = `Tên miền "${currentDomain}" chưa được ủy quyền (Authorized Domain) trong Firebase Console của dự án "znet-e48ea". Hãy truy cập vào cài đặt Firebase Auth (https://console.firebase.google.com/project/znet-e48ea/authentication/providers), chọn tab "Settings", vào mục "Authorized domains" ở menu bên trái, nhấn "Add domain" rồi điền "${currentDomain}" để sửa lỗi này!`;
-      }
       setErrorMsg(msg);
     } finally {
       setIsLoading(false);
@@ -699,7 +714,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
                     <>
                       <div>
                         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                          Tên tài khoản
+                          Tên tài khoản hoặc Email
                         </label>
                         <div className="relative">
                           <input

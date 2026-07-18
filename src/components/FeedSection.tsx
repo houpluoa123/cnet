@@ -8,6 +8,7 @@ import { Sparkles, MessageSquareHeart, Heart, Send, Users, Activity, ShieldAlert
 import { FeedPost, User, Comment } from '../types';
 import { syncFeedPostToFirebase } from '../lib/firebase';
 import { apiFetch as fetch } from '../lib/api';
+import { supabase } from '../supabaseClient';
 
 interface FeedSectionProps {
   token: string;
@@ -23,6 +24,10 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [sharedPostId, setSharedPostId] = useState<number | null>(null);
 
+  // Supabase states
+  const [supabaseMode, setSupabaseMode] = useState<boolean>(false);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
+
   // Comment sub-states
   const [loadedComments, setLoadedComments] = useState<{ [postId: number]: Comment[] }>({});
   const [expandedComments, setExpandedComments] = useState<{ [postId: number]: boolean }>({});
@@ -32,10 +37,81 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
     try {
       setIsLoading(true);
       setErrorMsg('');
+
+      // 1. Try querying Supabase
+      const { data: sbUserRes } = await supabase.auth.getUser();
+      const currentSbUserId = sbUserRes?.user?.id;
+
+      const { data: sbPosts, error: sbError } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (sbError) {
+        if (sbError.code === '42P01') {
+          console.warn("Supabase 'posts' table not found. Falling back to local SQLite database.");
+          setSupabaseError('posts_table_missing');
+          setSupabaseMode(false);
+        } else {
+          throw sbError;
+        }
+      } else if (sbPosts) {
+        setSupabaseMode(true);
+        setSupabaseError(null);
+
+        // Fetch user's likes to determine hasLiked status
+        let likedPostIds = new Set<string>();
+        if (currentSbUserId) {
+          const { data: likes } = await supabase
+            .from('post_likes')
+            .select('post_id')
+            .eq('user_id', currentSbUserId);
+          
+          if (likes) {
+            likedPostIds = new Set(likes.map((l: any) => String(l.post_id)));
+          }
+        }
+
+        // Fetch comment counts
+        const { data: commentCounts } = await supabase
+          .from('comments')
+          .select('post_id');
+        
+        const countsMap: { [key: string]: number } = {};
+        if (commentCounts) {
+          commentCounts.forEach((c: any) => {
+            countsMap[c.post_id] = (countsMap[c.post_id] || 0) + 1;
+          });
+        }
+
+        // Map Supabase rows to FeedPost interface
+        const mappedPosts: FeedPost[] = sbPosts.map((p: any) => ({
+          id: p.id,
+          content: p.content,
+          likesCount: p.likes_count || 0,
+          createdAt: p.created_at,
+          username: p.username,
+          avatar: p.avatar,
+          userId: p.user_id === currentSbUserId ? user.id : -1,
+          hasLiked: likedPostIds.has(String(p.id)) ? 1 : 0,
+          commentsCount: countsMap[p.id] || 0
+        }));
+
+        setPosts(mappedPosts);
+        setIsLoading(false);
+        return;
+      }
+    } catch (e: any) {
+      console.warn("Supabase load failed, utilizing SQLite fallback:", e);
+    }
+
+    // 2. Local SQLite fallback
+    try {
+      setSupabaseMode(false);
       const res = await fetch('/api/feeds/list', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (!res.ok) throw new Error('Không thể tải vòng thời gian ZNet');
+      if (!res.ok) throw new Error('Không thể tải vòng thời gian ZNet từ SQLite');
       const data = await res.json();
       setPosts(data || []);
     } catch (e: any) {
@@ -53,6 +129,56 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
     try {
       setIsSubmiting(true);
       setErrorMsg('');
+
+      if (supabaseMode) {
+        const { data: sbUserRes } = await supabase.auth.getUser();
+        const currentSbUser = sbUserRes?.user;
+        if (!currentSbUser) {
+          throw new Error('Bạn cần đăng nhập Supabase trước khi tạo bài đăng.');
+        }
+
+        const { data: newPost, error: sbInsertError } = await supabase
+          .from('posts')
+          .insert({
+            user_id: currentSbUser.id,
+            username: user.username,
+            avatar: user.avatar,
+            content: inputText.trim(),
+            likes_count: 0
+          })
+          .select()
+          .single();
+
+        if (sbInsertError) throw sbInsertError;
+
+        if (newPost) {
+          const mappedPost: FeedPost = {
+            id: newPost.id,
+            content: newPost.content,
+            likesCount: 0,
+            createdAt: newPost.created_at,
+            username: newPost.username,
+            avatar: newPost.avatar,
+            userId: user.id,
+            hasLiked: 0,
+            commentsCount: 0
+          };
+
+          setPosts(prev => [mappedPost, ...prev]);
+          setInputText('');
+          setIsSubmiting(false);
+          return;
+        }
+      }
+    } catch (err: any) {
+      console.error("Supabase publish error:", err);
+      setErrorMsg(err.message || 'Đăng trạng thái lên Supabase thất bại.');
+      setIsSubmiting(false);
+      return;
+    }
+
+    // SQLite Fallback
+    try {
       const res = await fetch('/api/feeds/create', {
         method: 'POST',
         headers: {
@@ -86,6 +212,27 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
     if (!window.confirm('Bạn có chắc chắn muốn xóa bài đăng cá nhân này không? Tất cả lượt Lượt thích & Bình luận sẽ bị loại bỏ.')) {
       return;
     }
+
+    if (supabaseMode) {
+      try {
+        const { error: sbDeleteError } = await supabase
+          .from('posts')
+          .delete()
+          .eq('id', postId);
+
+        if (sbDeleteError) throw sbDeleteError;
+
+        setPosts(prev => prev.filter(p => p.id !== postId));
+        alert('Đã xóa bài viết khỏi Supabase thành công.');
+        return;
+      } catch (err: any) {
+        console.error("Supabase delete failed:", err);
+        alert(err.message || 'Không thể xóa bài đăng trên Supabase.');
+        return;
+      }
+    }
+
+    // SQLite Fallback
     try {
       const res = await fetch(`/api/feeds/${postId}`, {
         method: 'DELETE',
@@ -104,6 +251,58 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
   };
 
   const likeStatusPost = async (postId: number) => {
+    if (supabaseMode) {
+      try {
+        const { data: sbUserRes } = await supabase.auth.getUser();
+        const currentSbUserId = sbUserRes?.user?.id;
+        if (!currentSbUserId) return;
+
+        const post = posts.find(p => p.id === postId);
+        const hasLiked = post ? !!post.hasLiked : false;
+
+        if (hasLiked) {
+          const { error: deleteLikeErr } = await supabase
+            .from('post_likes')
+            .delete()
+            .eq('post_id', postId)
+            .eq('user_id', currentSbUserId);
+
+          if (deleteLikeErr) throw deleteLikeErr;
+
+          const newLikesCount = Math.max(0, (post?.likesCount || 1) - 1);
+          await supabase
+            .from('posts')
+            .update({ likes_count: newLikesCount })
+            .eq('id', postId);
+
+          setPosts(prev =>
+            prev.map(p => p.id === postId ? { ...p, likesCount: newLikesCount, hasLiked: 0 } : p)
+          );
+        } else {
+          const { error: insertLikeErr } = await supabase
+            .from('post_likes')
+            .insert({ post_id: postId, user_id: currentSbUserId });
+
+          if (insertLikeErr) throw insertLikeErr;
+
+          const newLikesCount = (post?.likesCount || 0) + 1;
+          await supabase
+            .from('posts')
+            .update({ likes_count: newLikesCount })
+            .eq('id', postId);
+
+          setPosts(prev =>
+            prev.map(p => p.id === postId ? { ...p, likesCount: newLikesCount, hasLiked: 1 } : p)
+          );
+        }
+        return;
+      } catch (err) {
+        console.error("Supabase like failed:", err);
+        return;
+      }
+    }
+
+    // SQLite Fallback
     try {
       const res = await fetch(`/api/feeds/like/${postId}`, {
         method: 'POST',
@@ -132,8 +331,35 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
     }
 
     setExpandedComments(prev => ({ ...prev, [postId]: true }));
-    
-    // Fetch comments on demand if not fetched or force refresh
+
+    if (supabaseMode) {
+      try {
+        const { data: sbComments, error: sbCommentsErr } = await supabase
+          .from('comments')
+          .select('*')
+          .eq('post_id', postId)
+          .order('created_at', { ascending: true });
+
+        if (sbCommentsErr) throw sbCommentsErr;
+
+        const mappedComments: Comment[] = (sbComments || []).map((c: any) => ({
+          id: c.id,
+          content: c.content,
+          createdAt: c.created_at,
+          userId: c.user_id === user.id ? user.id : -1,
+          username: c.username,
+          avatar: c.avatar
+        }));
+
+        setLoadedComments(prev => ({ ...prev, [postId]: mappedComments }));
+        return;
+      } catch (err) {
+        console.error("Supabase get comments error:", err);
+        return;
+      }
+    }
+
+    // SQLite Fallback
     try {
       const res = await fetch(`/api/feeds/comments/${postId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -152,6 +378,59 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
     const commentText = commentInputs[postId]?.trim();
     if (!commentText) return;
 
+    if (supabaseMode) {
+      try {
+        const { data: sbUserRes } = await supabase.auth.getUser();
+        const currentSbUser = sbUserRes?.user;
+        if (!currentSbUser) return;
+
+        const { data: newComment, error: commentErr } = await supabase
+          .from('comments')
+          .insert({
+            post_id: postId,
+            user_id: currentSbUser.id,
+            username: user.username,
+            avatar: user.avatar,
+            content: commentText
+          })
+          .select()
+          .single();
+
+        if (commentErr) throw commentErr;
+
+        if (newComment) {
+          const mappedComment: Comment = {
+            id: newComment.id,
+            content: newComment.content,
+            createdAt: newComment.created_at,
+            userId: user.id,
+            username: newComment.username,
+            avatar: newComment.avatar
+          };
+
+          setLoadedComments(prev => ({
+            ...prev,
+            [postId]: [...(prev[postId] || []), mappedComment]
+          }));
+          setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+          
+          setPosts(prev =>
+            prev.map(post => {
+              if (post.id === postId) {
+                return { ...post, commentsCount: (post.commentsCount || 0) + 1 };
+              }
+              return post;
+            })
+          );
+        }
+        return;
+      } catch (err) {
+        console.error("Supabase comment submit failing:", err);
+        return;
+      }
+    }
+
+    // SQLite Fallback
     try {
       const res = await fetch(`/api/feeds/comments/${postId}`, {
         method: 'POST',
@@ -219,6 +498,77 @@ export default function FeedSection({ token, user, onViewProfile }: FeedSectionP
           {isLoading ? 'Đang tải...' : 'Làm mới feed'}
         </button>
       </div>
+
+      {supabaseError === 'posts_table_missing' && (
+        <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-2xl text-xs space-y-2 shrink-0">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block text-white mb-0.5">⚠️ Chế độ ngoại tuyến SQLite đang chạy (Local Offline Mode)</span>
+              <span>Ứng dụng ZNet đã kết nối với Supabase, nhưng bảng <strong>posts</strong> chưa được tạo trên cơ sở dữ liệu của bạn. Hãy khởi tạo các bảng Supabase bằng cách sao chép và thực thi tệp lệnh SQL trong bảng điều khiển Supabase SQL Editor của bạn!</span>
+            </div>
+          </div>
+          <details className="mt-2 text-[10px] font-mono bg-slate-950 p-3 rounded-xl border border-slate-800">
+            <summary className="cursor-pointer text-amber-400 font-bold hover:underline select-none">Nhấp vào đây để xem mã nguồn SQL tạo bảng</summary>
+            <pre className="mt-2 overflow-x-auto whitespace-pre leading-relaxed select-all">
+{`-- Tạo bảng posts trong Supabase
+create table public.posts (
+  id bigint generated always as identity primary key,
+  user_id uuid references auth.users(id) on delete cascade default auth.uid(),
+  username text not null,
+  avatar text not null,
+  content text not null,
+  likes_count int default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Kích hoạt Row Level Security (RLS)
+alter table public.posts enable row level security;
+
+-- Tạo chính sách bảo mật cho bảng posts
+create policy "Anyone can read posts" on public.posts for select using (true);
+create policy "Users can insert their own posts" on public.posts for insert with check (auth.uid() = user_id);
+create policy "Users can update their own posts" on public.posts for update using (auth.uid() = user_id);
+create policy "Users can delete their own posts" on public.posts for delete using (auth.uid() = user_id);
+
+-- Tạo bảng comments
+create table public.comments (
+  id bigint generated always as identity primary key,
+  post_id bigint references public.posts(id) on delete cascade not null,
+  user_id uuid references auth.users(id) on delete cascade default auth.uid(),
+  username text not null,
+  avatar text not null,
+  content text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.comments enable row level security;
+create policy "Anyone can view comments" on public.comments for select using (true);
+create policy "Users can insert comments" on public.comments for insert with check (auth.uid() = user_id);
+create policy "Users can delete their own comments" on public.comments for delete using (auth.uid() = user_id);
+
+-- Tạo bảng likes
+create table public.post_likes (
+  post_id bigint references public.posts(id) on delete cascade not null,
+  user_id uuid references auth.users(id) on delete cascade default auth.uid(),
+  primary key (post_id, user_id)
+);
+
+alter table public.post_likes enable row level security;
+create policy "Anyone can view likes" on public.post_likes for select using (true);
+create policy "Users can toggle likes" on public.post_likes for insert with check (auth.uid() = user_id);
+create policy "Users can delete their own likes" on public.post_likes for delete using (auth.uid() = user_id);`}
+            </pre>
+          </details>
+        </div>
+      )}
+
+      {supabaseMode && (
+        <div className="mb-4 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] uppercase font-bold tracking-wider inline-flex items-center gap-1.5 self-start shrink-0 animate-fade-in">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          Đã đồng bộ hóa Trực tiếp với Supabase Cloud
+        </div>
+      )}
 
       {errorMsg && (
         <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-4 py-2 text-xs rounded-xl flex items-center gap-2 mb-4 shrink-0">

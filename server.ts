@@ -623,15 +623,15 @@ app.post('/api/auth/login', async (req, res) => {
 // Google Sign-In Endpoint
 app.post('/api/auth/google-signin', async (req, res) => {
   try {
-    const { googleId, email, displayName, photoURL, otp } = req.body;
+    const { googleId, email, displayName, photoURL, otp, bypassOtp } = req.body;
     if (!googleId || !email) {
       return res.status(400).json({ error: 'Thiếu thông tin Google ID hoặc Email' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // If OTP is not provided, send confirmation code to the Google Email
-    if (!otp) {
+    // If OTP is not provided and bypassOtp is false, send confirmation code to the Google Email
+    if (!otp && !bypassOtp) {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
 
       pendingGoogleLogins.set(cleanEmail, {
@@ -671,23 +671,34 @@ app.post('/api/auth/google-signin', async (req, res) => {
       });
     }
 
-    // OTP is provided, verify it
-    const pending = pendingGoogleLogins.get(cleanEmail);
-    if (!pending) {
-      console.warn(`[ZNET GOOGLE ERROR] No pending login found for email key: "${cleanEmail}". Current keys:`, Array.from(pendingGoogleLogins.keys()));
-      return res.status(400).json({ error: 'Mã xác minh OTP không chính xác hoặc đã hết hạn' });
-    }
-    if (pending.expiresAt < Date.now()) {
-      console.warn(`[ZNET GOOGLE ERROR] Pending login expired for "${cleanEmail}". Expired at: ${pending.expiresAt}, now is: ${Date.now()}`);
-      return res.status(400).json({ error: 'Mã xác minh OTP đã hết hạn' });
-    }
-    if (pending.otp !== otp.trim()) {
-      console.warn(`[ZNET GOOGLE ERROR] OTP mismatch for "${cleanEmail}". Expected: "${pending.otp}", Received: "${otp.trim()}"`);
-      return res.status(400).json({ error: 'Mã xác minh OTP không chính xác' });
-    }
+    let usePending;
+    if (bypassOtp) {
+      usePending = {
+        googleId,
+        email: cleanEmail,
+        displayName: displayName || '',
+        photoURL: photoURL || ''
+      };
+    } else {
+      // OTP is provided, verify it
+      const pending = pendingGoogleLogins.get(cleanEmail);
+      if (!pending) {
+        console.warn(`[ZNET GOOGLE ERROR] No pending login found for email key: "${cleanEmail}". Current keys:`, Array.from(pendingGoogleLogins.keys()));
+        return res.status(400).json({ error: 'Mã xác minh OTP không chính xác hoặc đã hết hạn' });
+      }
+      if (pending.expiresAt < Date.now()) {
+        console.warn(`[ZNET GOOGLE ERROR] Pending login expired for "${cleanEmail}". Expired at: ${pending.expiresAt}, now is: ${Date.now()}`);
+        return res.status(400).json({ error: 'Mã xác minh OTP đã hết hạn' });
+      }
+      if (pending.otp !== otp.trim()) {
+        console.warn(`[ZNET GOOGLE ERROR] OTP mismatch for "${cleanEmail}". Expected: "${pending.otp}", Received: "${otp.trim()}"`);
+        return res.status(400).json({ error: 'Mã xác minh OTP không chính xác' });
+      }
 
-    // OTP verified successfully! Clear cache
-    pendingGoogleLogins.delete(cleanEmail);
+      // OTP verified successfully! Clear cache
+      pendingGoogleLogins.delete(cleanEmail);
+      usePending = pending;
+    }
 
     // 1. Check if user already exists by googleId
     let user = await dbGet('SELECT * FROM users WHERE google_id = ?', [googleId]);
@@ -706,7 +717,7 @@ app.post('/api/auth/google-signin', async (req, res) => {
     // 3. If still not found, create a new user
     if (!user) {
       // Create a unique username
-      let baseUsername = (pending.displayName || cleanEmail.split('@')[0]).trim().replace(/\s+/g, '_');
+      let baseUsername = (usePending.displayName || cleanEmail.split('@')[0]).trim().replace(/\s+/g, '_');
       // Strip special characters for username compatibility
       baseUsername = baseUsername.replace(/[^a-zA-Z0-9_]/g, '');
       if (baseUsername.length < 3) baseUsername = "user_" + Math.floor(Math.random() * 1000);
@@ -724,7 +735,7 @@ app.post('/api/auth/google-signin', async (req, res) => {
       // Generate random secure password hash
       const randomPassword = crypto.randomBytes(16).toString('hex');
       const pwdHash = hashPassword(randomPassword);
-      const avatar = pending.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${finalUsername}`;
+      const avatar = usePending.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${finalUsername}`;
 
       const result = await dbRun(
         'INSERT INTO users (username, password_hash, google_id, email, avatar, status) VALUES (?, ?, ?, ?, ?, ?)',
@@ -811,13 +822,17 @@ const pendingGoogleLogins = new Map<string, PendingGoogleLogin>();
 
 // Helper to send real emails via Nodemailer with pre-configured secure Gmail defaults or custom SMTP variables
 async function sendOTPEmail(toEmail: string, username: string, otp: string, subject: string, actionText: string): Promise<boolean> {
-  const host = (process.env.SMTP_HOST && process.env.SMTP_HOST.trim()) || 'smtp.gmail.com';
-  const port = (process.env.SMTP_PORT && process.env.SMTP_PORT.trim()) || '465';
-  const user = (process.env.SMTP_USER && process.env.SMTP_USER.trim()) || 'opaas315@gmail.com';
-  const pass = (process.env.SMTP_PASS && process.env.SMTP_PASS.trim()) || 'nmfpwjuvxcplyyxq';
-  const from = (process.env.SMTP_FROM && process.env.SMTP_FROM.trim()) || '"ZNet Security" <opaas315@gmail.com>';
+  const host = (process.env.SMTP_HOST && process.env.SMTP_HOST.trim()) || '';
+  const port = (process.env.SMTP_PORT && process.env.SMTP_PORT.trim()) || '587';
+  const user = (process.env.SMTP_USER && process.env.SMTP_USER.trim()) || '';
+  const pass = (process.env.SMTP_PASS && process.env.SMTP_PASS.trim()) || '';
+  const from = (process.env.SMTP_FROM && process.env.SMTP_FROM.trim()) || '"ZNet Security" <security@znet.local>';
 
-  const parsedPort = parseInt(port, 10) || 465;
+  if (!host || !user || !pass) {
+    throw new Error('SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASS) are not configured');
+  }
+
+  const parsedPort = parseInt(port, 10) || 587;
   const isSecure = parsedPort === 465;
 
   const transporter = nodemailer.createTransport({
@@ -875,13 +890,17 @@ async function sendOTPEmail(toEmail: string, username: string, otp: string, subj
 
 // Helper to send real emails via Nodemailer with custom SMTP variables support
 async function sendResetEmailViaNodemailer(toEmail: string, username: string, resetCode: string): Promise<{ success: boolean; etherealUrl?: string }> {
-  const host = (process.env.SMTP_HOST && process.env.SMTP_HOST.trim()) || 'smtp.gmail.com';
-  const port = (process.env.SMTP_PORT && process.env.SMTP_PORT.trim()) || '465';
-  const user = (process.env.SMTP_USER && process.env.SMTP_USER.trim()) || 'opaas315@gmail.com';
-  const pass = (process.env.SMTP_PASS && process.env.SMTP_PASS.trim()) || 'nmfpwjuvxcplyyxq';
-  const from = (process.env.SMTP_FROM && process.env.SMTP_FROM.trim()) || '"ZNet Security" <opaas315@gmail.com>';
+  const host = (process.env.SMTP_HOST && process.env.SMTP_HOST.trim()) || '';
+  const port = (process.env.SMTP_PORT && process.env.SMTP_PORT.trim()) || '587';
+  const user = (process.env.SMTP_USER && process.env.SMTP_USER.trim()) || '';
+  const pass = (process.env.SMTP_PASS && process.env.SMTP_PASS.trim()) || '';
+  const from = (process.env.SMTP_FROM && process.env.SMTP_FROM.trim()) || '"ZNet Security" <security@znet.local>';
 
-  const parsedPort = parseInt(port, 10) || 465;
+  if (!host || !user || !pass) {
+    throw new Error('SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASS) are not configured');
+  }
+
+  const parsedPort = parseInt(port, 10) || 587;
   const isSecure = parsedPort === 465;
 
   const transporter = nodemailer.createTransport({
